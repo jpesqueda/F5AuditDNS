@@ -278,3 +278,8 @@ F5AuditDNS/
 ### Licencia y atribución
 
 El cliente REST deriva del paquete F5Audit LTM 0.7.0 aportado como referencia. Se conserva la licencia MIT original y se documenta la atribución en `NOTICE.md`.
+
+
+## Publish with GitHub Actions
+
+To publish via Trusted Publishing, see [GitHub Actions publishing guide](docs/PUBLISHING_GITHUB_ACTIONS_ES.md).
