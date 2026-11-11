@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "f5auditdns"
+version = "0.1.2"
+description = "Read-only, evidence-first audit for F5 BIG-IP DNS GSLB with offline JSON snapshots and Excel/CSV reports"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+keywords = ["f5", "big-ip", "dns", "gtm", "gslb", "audit", "automation"]
+dependencies = ["requests>=2.25", "openpyxl>=3.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+f5auditdns = "f5auditdns.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["f5auditdns*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
