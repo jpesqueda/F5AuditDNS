@@ -1,0 +1,16 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.egg-info/
+.venv/
+dist/
+build/
+reports/
+snapshots/
+*.log
+.env
+
+# Generated F5 audit data
+f5auditDNS_raw_*/
+raw_dns/
+DNS_Audit*.xlsx

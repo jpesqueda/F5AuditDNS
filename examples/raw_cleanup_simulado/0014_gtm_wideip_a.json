@@ -1,0 +1,24 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "gtm_wideip_a",
+  "data": [
+    {
+      "name": "app.empresa.example",
+      "partition": "Common",
+      "fullPath": "/Common/app.empresa.example",
+      "enabled": true,
+      "lastResortPool": "/Common/pool_fallback"
+    },
+    {
+      "name": "old.empresa.example",
+      "partition": "Common",
+      "fullPath": "/Common/old.empresa.example",
+      "disabled": true
+    },
+    {
+      "name": "retired.example.test",
+      "fullPath": "/Common/retired.example.test",
+      "enabled": true
+    }
+  ]
+}

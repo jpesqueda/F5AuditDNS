@@ -1,0 +1,18 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "server_virtuals::/Common/GDL-F5",
+  "data": [
+    {
+      "name": "vs_app",
+      "fullPath": "/Common/vs_app",
+      "destination": "192.0.2.100:443",
+      "enabled": true
+    },
+    {
+      "name": "vs_retired",
+      "fullPath": "/Common/vs_retired",
+      "destination": "192.0.2.200:443",
+      "enabled": true
+    }
+  ]
+}

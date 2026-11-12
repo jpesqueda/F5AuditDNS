@@ -1,0 +1,11 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "pool_members::a::/Common/pool_retired",
+  "data": [
+    {
+      "name": "/Common/GDL-F5:/Common/vs_retired",
+      "enabled": true,
+      "ratio": 1
+    }
+  ]
+}

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] — 2026-11-11
+
+- Add Verdict / Notes / Delete / Rollback to GSLB inventories, and a dedicated Cleanup Candidates sheet (12 total).
+- Compare GSLB Members and Virtual Servers against one or more **explicitly mapped** original F5Audit LTM raw snapshots (`--ltm-raw GSLB_SERVER=PATH`).
+- Identify absent LTM Virtual Servers only when destination/name are absent in a complete LTM inventory and DNS/LTM collection timestamps are close (48h default).
+- Classify unreferenced GSLB Pools as ORPHAN only when all static/dynamic relationship checks are complete.
+- Suggest tmsh member removal/re-add and GSLB Virtual Server removal/re-add; guard application-owned objects and discovery-managed Virtual Servers. Pool rollback requires prior full config backup.
+- Preserve strictly read-only collection and offline analysis: commands are never executed.
+- Include fictional DNS + LTM snapshots for end-to-end cleanup demonstration and 32 automated tests.
+
 ## [0.1.2] — 2026-11-11
 
 - Shorten automatic snapshot folder timestamps to `YYYYMMDD_HHMM` (minutes instead of seconds).

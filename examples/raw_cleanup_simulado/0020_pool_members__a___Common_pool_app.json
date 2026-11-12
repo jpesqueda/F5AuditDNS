@@ -1,0 +1,14 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "pool_members::a::/Common/pool_app",
+  "data": [
+    {
+      "name": "/Common/GDL-F5:/Common/vs_app",
+      "enabled": true
+    },
+    {
+      "name": "/Common/QRO-F5:/Common/vs_app",
+      "enabled": true
+    }
+  ]
+}

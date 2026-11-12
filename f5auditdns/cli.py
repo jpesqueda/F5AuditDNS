@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .analyzer import analyze
+from .ltm_compare import parse_ltm_mappings, LtmSnapshotError
 from .client import F5ClientError, F5ReadOnlyClient
 from .collector import Collector, Snapshot, SnapshotError, validate
 from .report import as_csv, as_excel
@@ -92,6 +93,7 @@ Examples (DNS hostname / FQDN):
 
 Analyze the snapshot (offline):
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx
+  f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl"
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 
@@ -101,7 +103,7 @@ is created in the current working directory. After collection, the exact
 analyze command is displayed, relative to that same directory.
 
 Safety: BIG-IP configuration is read via GET. A POST is used only to obtain
-an authentication token. No changes or deletion scripts are generated.
+an authentication token. No changes are made. Delete/Rollback columns are informational change proposals.
 """
     validate_examples = r"""Examples:
   f5auditdns validate -ho 192.0.2.20 -u auditor
@@ -120,7 +122,10 @@ Without -o, the output folder uses the BIG-IP device hostname and timestamp,
 and the final output prints an analyze command you can copy and paste.
 """
     analyze_examples = r"""Examples (no BIG-IP connection needed):
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl" -o DNS_Audit.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw "GDL-F5=.\ltm_gdl_raw" --ltm-raw "QRO-F5=.\ltm_qro_raw"
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx
+  f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl"
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 """
@@ -156,6 +161,10 @@ and the final output prints an analyze command you can copy and paste.
                              help="core: GSLB objects only; all: also monitors, iRules, topology, listeners")
         if name == "analyze":
             sub.add_argument("--from-raw", required=True, help="Previously collected snapshot directory")
+            sub.add_argument("--ltm-raw", action="append", default=[], metavar="GSLB_SERVER=PATH",
+                             help="Optional F5Audit LTM raw snapshot mapped to a DNS GSLB Server; repeat per server")
+            sub.add_argument("--max-snapshot-gap-hours", type=float, default=48, metavar="HOURS",
+                             help="Maximum DNS vs LTM snapshot time difference for candidates (default: 48h)")
             sub.add_argument("-o", "--out", default="F5_DNS_Audit.xlsx", help="Output .xlsx or CSV directory")
             sub.add_argument("--format", choices=("excel", "csv"), default="excel")
         sub.add_argument("-v", "--verbose", action="store_true", help="Show REST collection progress")
@@ -223,7 +232,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f'  f5auditdns analyze --from-raw "{shell_path(path)}" -o ".{os.sep}DNS_Audit.xlsx"')
             return 0 if bad == 0 else 2
         snapshot = Snapshot.read(args.from_raw)
-        audit = analyze(snapshot)
+        if args.max_snapshot_gap_hours <= 0:
+            raise ValueError("--max-snapshot-gap-hours must be positive")
+        ltm_snapshots = parse_ltm_mappings(args.ltm_raw)
+        audit = analyze(snapshot, ltm_snapshots, args.max_snapshot_gap_hours)
         if args.format == "csv":
             paths = as_csv(audit, args.out)
             print(f"Generated {len(paths)} CSV files in {args.out}")
@@ -231,9 +243,11 @@ def main(argv: list[str] | None = None) -> int:
             filename = as_excel(audit, args.out)
             print(f"Excel report: {filename}")
         print(f"Wide IPs: {len(audit.wideips)} | Pools: {len(audit.pools)} "
-              f"| Members: {len(audit.members)} | Review items: {len(audit.manual_review)}")
+              f"| Members: {len(audit.members)} | Review items: {len(audit.manual_review)} "
+              f"| Cleanup candidates: {len(audit.candidates)}")
+        print("Delete/Rollback are proposals only: no changes made to BIG-IP.")
         return 0
-    except (F5ClientError, SnapshotError, OSError, ValueError) as exc:
+    except (F5ClientError, SnapshotError, LtmSnapshotError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 

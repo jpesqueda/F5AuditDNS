@@ -1,6 +1,6 @@
 """Excel and CSV reporting for F5AuditDNS.
 
-The report contains evidence and review items, not executable cleanup commands.
+The report contains evidence and proposed commands for human change review only.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ SHEETS = [
     ("GSLB Virtual Servers", "virtuals"),
     ("Data Centers", "datacenters"),
     ("DNS Chains", "chains"),
+    ("Cleanup Candidates", "candidates"),
     ("Manual Review", "manual_review"),
     ("Auxiliary Inventory", "auxiliary"),
     ("Collection Health", "collection_health"),
@@ -92,7 +93,7 @@ def as_excel(audit: Audit, filename: str | Path) -> str:
         for col, k in enumerate(keys, 1):
             max_data = max([len(str(k))] + [len(str(r.get(k, ""))) for r in rows[:250]])
             width = min(52, max(14, max_data + 2))
-            if k in ("Reason", "Note", "Description"):
+            if k in ("Reason", "Note", "Notes", "Description", "Delete", "Rollback"):
                 width = 52
             ws.column_dimensions[get_column_letter(col)].width = width
         ws.auto_filter.ref = ws.dimensions

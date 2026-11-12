@@ -1,0 +1,23 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "gtm_server",
+  "data": [
+    {
+      "name": "GDL-F5",
+      "partition": "Common",
+      "fullPath": "/Common/GDL-F5",
+      "datacenter": "/Common/DC_GDL",
+      "product": "bigip",
+      "enabled": true,
+      "virtualServerDiscovery": "disabled"
+    },
+    {
+      "name": "QRO-F5",
+      "partition": "Common",
+      "fullPath": "/Common/QRO-F5",
+      "datacenter": "/Common/DC_QRO",
+      "product": "bigip",
+      "enabled": true
+    }
+  ]
+}

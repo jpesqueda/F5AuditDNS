@@ -1,12 +1,12 @@
 # F5AuditDNS — Auditoría de F5 BIG-IP DNS / GSLB
 
-**Versión:** 0.1.2 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
+**Versión:** 0.2.0 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
 **Plataformas:** Windows / Linux / macOS, Python 3.9+  
 **Proyecto independiente:** no modifica, instala ni importa `f5audit` (LTM).
 
 F5AuditDNS reutiliza la filosofía de F5Audit LTM: **READ ONLY → RAW JSON → CORRELACIÓN → REPORTE**.
 
-> **Advertencia de producción:** esta versión valida la estructura de configuración GSLB, no acredita que un recurso esté inactivo por falta de tráfico. Ningún hallazgo autoriza una eliminación. No genera comandos `delete` ni `modify`.
+> **Advertencia de producción:** esta versión identifica candidatos a cleanup y propone comandos `tmsh` **como texto**, sin ejecutarlos. Un veredicto no autoriza la eliminación: confirma siempre estados actuales, asociaciones DNS, aplicaciones de DR y un backup fiel de la configuración antes del cambio.
 
 ## 1. ¿Qué audita?
 
@@ -148,7 +148,7 @@ f5auditdns analyze --from-raw .\raw_dns -o .\DNS_Audit.xlsx
 f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 ```
 
-Este análisis no requiere conectividad con el BIG-IP ni `--insecure`.
+Este análisis no requiere conectividad con el BIG-IP ni `--insecure`. Opcionalmente puedes asociar uno o varios snapshots originales de F5Audit LTM con `--ltm-raw` para confirmar si las VIPs siguen existiendo.
 
 ### 3.5 Ayuda y más ejemplos
 
@@ -175,7 +175,69 @@ Para regenerar el snapshot ficticio, vacía antes la carpeta y ejecuta:
 python .\examples\generate_sample.py
 ```
 
-## 4. Hojas de reporte (11)
+## 3.7 Cleanup DNS con columnas Verdict / Notes / Delete / Rollback (v0.2.0)
+
+El informe diferencia entre **objetos sin referencias** y **objetos que realmente desaparecieron del LTM**.
+
+| Veredicto | Interpretación | Comando propuesto |
+|---|---|---|
+| `IN USE` | El objeto sigue referenciado o se encontró en el snapshot LTM | No |
+| `ORPHAN` | Pool sin referencias estáticas; inventarios completos y sin referencias GTM dinámicas | Sí, solo para Pools elegibles |
+| `INACTIVE` | Wide IP o Pool deshabilitado | No; puede ser de contingencia |
+| `OFFLINE (decommission candidate)` | Un VS GSLB o Pool Member apunta a una VIP ausente en su LTM explícitamente mapeado y el snapshot es reciente | Sí, con prerrequisitos y respaldo |
+| `MANUAL REVIEW` | DOWN, inconsistente, iRule, fallback u otra dependencia posible | No |
+| `UNRELIABLE` | Faltan datos/permisos o no se resolvió la identidad | No |
+
+**No interpretes un Pool Member de GSLB como un Node backend de LTM.** GSLB suele apuntar a una VIP de aplicación, y F5Audit LTM tiene que inspeccionar su Pool/Nodes por separado. La v0.2.0 compara el **Virtual Server y su dirección de destino** con el inventario LTM, no todos los backend Pool Members.
+
+### Sin comparación LTM: detectar Pools potencialmente huérfanos
+
+```powershell
+f5auditdns analyze --from-raw .\raw_dns -o .\DNS_Audit.xlsx
+```
+
+El objeto `gtm pool` solo obtiene veredicto `ORPHAN` si están completos los datasets y las asociaciones Wide IP/Last Resort, se consultaron iRules/distributed-apps y no se detectaron referencias dinámicas. Ante dudas, se devuelve `MANUAL REVIEW`.
+
+### Con comparación LTM: detectar miembros GSLB antiguos
+
+Primero recopila con la herramienta **F5Audit LTM original** en cada BIG-IP LTM involucrado. Después proporciona sus directorios RAW originales usando el formato `NOMBRE_GSLB_SERVER=RUTA_LTM`:
+
+```powershell
+f5auditdns analyze --from-raw .\f5auditDNS_raw_dns01.example.test_20261111_1653 `
+  --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl" `
+  --ltm-raw "/Common/QRO-F5=.\raw_ltm_qro" `
+  -o .\DNS_Audit.xlsx
+```
+
+En PowerShell, escribe el comando en una sola línea o usa acento grave (backtick) para continuarlo. Cada backtick al final de línea indica continuación en PowerShell; no agregues espacios después del backtick.
+
+La asociación es **explícita** porque el nombre de un Server GTM no necesariamente coincide con el hostname administrativo del dispositivo LTM. No asumas la identidad por parecido de nombres. Si faltan los snapshots o la diferencia de hora entre DNS y LTM supera 48 h, la herramienta no promoverá la ausencia a candidato. Puedes ajustar ese umbral con `--max-snapshot-gap-hours 24`.
+
+### Ejemplo con snapshots ficticios incluidos
+
+```powershell
+f5auditdns analyze --from-raw .\examples\raw_cleanup_simulado --ltm-raw "/Common/GDL-F5=.\examples\ltm_raw_gdl_simulado" -o .\DNS_Cleanup_Demo.xlsx
+```
+
+La salida incluye `Cleanup Candidates` con `Delete` y `Rollback`. Para un miembro retirado, se propone:
+
+```text
+tmsh modify gtm pool a /Common/pool_retired members delete { /Common/GDL-F5:/Common/vs_retired }
+```
+
+Y para restaurar, si se aprobaron los valores exactos del miembro:
+
+```text
+tmsh modify gtm pool a /Common/pool_retired members add { /Common/GDL-F5:/Common/vs_retired { enabled ratio 1 } }
+```
+
+**Orden recomendado:** retirar primero la referencia del Pool Member, luego revisar si el Virtual Server GSLB ya está sin referencias, y solo después considerar eliminar el Pool, únicamente si se desvinculó de todos los Wide IPs y Last Resort Pools. Antes del cambio, guarda el resultado completo de `tmsh list gtm pool ... all-properties` y `tmsh list gtm server ... all-properties`. Los comandos de rollback parciales deben completarse con todos los atributos originales. **No ejecutar ningún comando solo por aparecer en el Excel.**
+
+### Requisitos para validar con tu ambiente
+
+Para probar la correlación en producción necesitamos ejemplos anonimizados de: `tmsh list gtm pool a <pool> all-properties`, `tmsh list gtm server <server> all-properties`, snapshots RAW DNS y LTM tomados en una ventana cercana, y la versión exacta de TMOS. No compartas credenciales, tokens ni direcciones sensibles sin anonimizar.
+
+## 4. Hojas de reporte (12)
 
 | Hoja Excel | Pregunta que responde |
 |---|---|
@@ -187,6 +249,7 @@ python .\examples\generate_sample.py
 | GSLB Virtual Servers | ¿Qué servicios tiene cada Server? |
 | Data Centers | ¿Cuántos GSLB Servers están asociados? |
 | DNS Chains | ¿Cuál es la cadena Wide IP → Pool → Member → Server → VS? |
+| Cleanup Candidates | Acciones de limpieza propuestas, ordenadas: miembros → GSLB virtual servers → pools |
 | Manual Review | ¿Qué referencias o configuraciones necesitan revisión? |
 | Auxiliary Inventory | ¿Qué Monitors, iRules, Listeners, etc. fueron recopilados? |
 | Collection Health | ¿Qué consultas API fueron completadas, rechazadas o faltan? |
@@ -218,7 +281,7 @@ Este vínculo **no prueba** que el destino esté activo o reciba consultas. Solo
 
 - Todas las consultas de inventario son **GET**.
 - **Único POST:** `/mgmt/shared/authn/login` para solicitar el token de autenticación.
-- No existen comandos CLI para modificar, eliminar o restaurar configuración.
+- Los comandos `Delete` y `Rollback` se generan únicamente como texto para solicitudes de cambio. El programa **nunca los ejecuta**.
 - Contraseña oculta con `getpass`; se admite `F5AUDITDNS_PASSWORD` para automatización segura.
 - Certificado TLS verificado por defecto. `--insecure` es opcional y se recomienda solo para laboratorio.
 - Los snapshots tienen identificadores únicos; una carpeta con datasets mezclados se rechaza.
@@ -236,6 +299,8 @@ F5AuditDNS/
 │   ├── cli.py                  # validate / collect / analyze
 │   ├── collector.py            # REST + JSON snapshots
 │   ├── analyzer.py             # Correlaciones GSLB
+│   ├── cleanup.py              # Verdict, Delete, Rollback (propuestas)
+│   ├── ltm_compare.py          # Comparación offline explícita LTM
 │   └── report.py               # Excel + CSV
 ├── tests/                      # Pruebas offline
 ├── examples/raw_simulado/      # Datos ficticios
@@ -248,19 +313,19 @@ F5AuditDNS/
 └── pyproject.toml
 ```
 
-## 7. Limitaciones conocidas de v0.1.0
+## 7. Limitaciones conocidas de v0.2.0
 
 1. **No validada contra dispositivos reales.** Se deben confirmar propiedades, referencias y permisos con la versión TMOS de tu ambiente.
 2. Las rutas REST de las subcolecciones y los datos devueltos pueden diferir entre versiones. Si no hay pruebas concluyentes, se marca `UNKNOWN`.
 3. Los campos `enabled`/`disabled` no sustituyen las estadísticas de disponibilidad operativa.
 4. No es un auditor de zonas DNS ni de DNS Express, Cache o DNSSEC; se centra en GSLB.
-5. No hay análisis temporal ni comparación de snapshots.
+5. No hay análisis histórico de tráfico. Solo se compara presencia de VIPs en snapshots LTM explícitamente asignados; no analiza aún los nodos backend de LTM.
 6. No hay soporte de múltiples hosts en una sola ejecución.
-7. No hay comandos `tmsh` de eliminación ni rollback intencionalmente. Estos deben planificarse solo después de validar dependencias y comportamiento del equipo.
+7. Los comandos `tmsh` de cleanup son propuestas limitadas, no procedimientos de rollback garantizados: conserva `tmsh list ... all-properties` y un respaldo de configuración completo antes del cambio.
 
 ## 8. Próximos pasos
 
-**v0.2.0:** validar snapshots de TMOS reales; mejorar correlación en particiones/subPaths y estados health; capturar estadísticas reales y diagnósticos de monitor.  
+**v0.2.x:** validar snapshots de TMOS reales; mejorar correlación en particiones/subPaths y estados health; capturar estadísticas reales y diagnósticos de monitor.  
 **v0.3.0:** comparación de snapshots y hallazgos por períodos.  
 **v0.4.0:** múltiples BIG-IP DNS y reporte consolidado.  
 **v0.5.0:** DNS Services (Zones, DNS Express, DNSSEC, Cache) como módulo separado.  

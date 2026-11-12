@@ -1,0 +1,10 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "wideip_pools::a::/Common/retired.example.test",
+  "data": [
+    {
+      "name": "pool_retired",
+      "partition": "Common"
+    }
+  ]
+}

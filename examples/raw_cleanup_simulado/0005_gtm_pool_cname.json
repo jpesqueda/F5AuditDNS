@@ -1,0 +1,12 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "gtm_pool_cname",
+  "data": [
+    {
+      "name": "pool_fallback",
+      "partition": "Common",
+      "fullPath": "/Common/pool_fallback",
+      "enabled": true
+    }
+  ]
+}

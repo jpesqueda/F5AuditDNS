@@ -26,6 +26,7 @@ class Audit:
     manual_review: list[dict[str, Any]] = field(default_factory=list)
     auxiliary: list[dict[str, Any]] = field(default_factory=list)
     collection_health: list[dict[str, Any]] = field(default_factory=list)
+    candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
 def normalize_path(value: Any, partition: str = "Common") -> str:
@@ -116,7 +117,7 @@ def resolve_member(raw: str, server_virtuals: dict[tuple[str, str], str]) -> tup
     return ("", "", "AMBIGUOUS" if len(matches) > 1 else "UNRESOLVED")
 
 
-def analyze(snap: Snapshot) -> Audit:
+def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 48) -> Audit:
     a = Audit()
     datasets, results = snap.datasets, snap.meta.get("endpoint_results", {})
     core_keys = [f"gtm_{kind}_{rr}" for rr in RECORD_TYPES for kind in ("wideip", "pool")]
@@ -334,4 +335,6 @@ def analyze(snap: Snapshot) -> Audit:
     if any_dynamic or dynamic_coverage_unknown:
         add_manual(a, "GLOBAL", "DYNAMIC REFERENCES",
                    "iRules/distributed apps present or not collected; direct object references may be incomplete")
+    from .cleanup import enrich_cleanup
+    enrich_cleanup(a, snap, ltm_snapshots, max_snapshot_gap_hours)
     return a

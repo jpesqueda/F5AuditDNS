@@ -1,0 +1,18 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "gtm_datacenter",
+  "data": [
+    {
+      "name": "DC_GDL",
+      "partition": "Common",
+      "fullPath": "/Common/DC_GDL",
+      "enabled": true
+    },
+    {
+      "name": "DC_QRO",
+      "partition": "Common",
+      "fullPath": "/Common/DC_QRO",
+      "enabled": true
+    }
+  ]
+}

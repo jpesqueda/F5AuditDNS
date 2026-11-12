@@ -1,0 +1,32 @@
+{
+  "collection_id": "simulated-dns-cleanup-2026-v02",
+  "key": "gtm_pool_a",
+  "data": [
+    {
+      "name": "pool_app",
+      "partition": "Common",
+      "fullPath": "/Common/pool_app",
+      "enabled": true,
+      "loadBalancingMode": "round-robin"
+    },
+    {
+      "name": "pool_dormant",
+      "partition": "Common",
+      "fullPath": "/Common/pool_dormant",
+      "enabled": true,
+      "loadBalancingMode": "global-availability"
+    },
+    {
+      "name": "pool_retired",
+      "fullPath": "/Common/pool_retired",
+      "enabled": true,
+      "loadBalancingMode": "round-robin"
+    },
+    {
+      "name": "pool_orphan",
+      "fullPath": "/Common/pool_orphan",
+      "enabled": false,
+      "loadBalancingMode": "round-robin"
+    }
+  ]
+}
