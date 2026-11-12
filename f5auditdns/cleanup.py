@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 
 from .collector import RECORD_TYPES, Snapshot, object_id
-from .ltm_compare import LtmInventory
+from .ltm_compare import LtmInventory, LtmScan
 
 if TYPE_CHECKING:
     from .analyzer import Audit
@@ -44,8 +44,7 @@ def rollback_member(rr: str, pool: str, member: str, data: dict[str, Any]) -> st
         attrs.append("enabled")
     elif data.get("disabled") is True:
         attrs.append("disabled")
-    for key, tmsh_key in (("ratio", "ratio"), ("memberOrder", "member-order"),
-                          ("priority", "priority"), ("weight", "weight"), ("port", "port")):
+    for key, tmsh_key in (("ratio", "ratio"), ("memberOrder", "member-order")):
         val = data.get(key)
         if val is not None and str(val).isdigit():
             attrs.append(f"{tmsh_key} {val}")
@@ -74,6 +73,40 @@ def prepared_pool_commands(rr: str, pool: str, obj: dict[str, Any], members: lis
                 "# ROLLBACK: restore the exact saved Pool configuration using an approved tmsh/config backup\n"
                 "# No safe one-line create command can be guaranteed from REST alone")
     return delete, rollback
+
+
+
+def prepared_virtual_commands(server: str, vs: str, data: dict[str, Any], server_data: dict[str, Any]) -> tuple[str, str]:
+    """Reference-only tmsh actions; discovery and dependencies must be checked."""
+    if not safe_object(server) or not safe_object(vs) or data.get("appService") or server_data.get("appService"):
+        return "", "REVIEW REQUIRED: invalid identifier or iApp ownership"
+    command = f"tmsh modify gtm server {server} virtual-servers delete {{ {vs} }}"
+    restore = f"# BEFORE DELETE: tmsh list gtm server {server} all-properties\n"
+    dest = str(data.get("destination") or data.get("address") or "")
+    if dest and re.fullmatch(r"[A-Za-z0-9.:%_-]+", dest):
+        restore += ("# PARTIAL ROLLBACK EXAMPLE ONLY: other settings MUST be restored from saved config\n"
+                    f"tmsh modify gtm server {server} virtual-servers add {{ {vs} {{ destination {dest} }} }}\n")
+    else:
+        restore += "# ROLLBACK: recreate using the exact saved virtual-server settings\n"
+    restore += "# Auto-discovery may recreate or manage this VS; validate dependencies and configuration backup"
+    return command, restore
+
+
+def prepared_server_commands(server: str, data: dict[str, Any]) -> tuple[str, str]:
+    """GSLB Server deletion is not the same as deleting a physical LTM device."""
+    if not safe_object(server) or data.get("appService"):
+        return "", "REVIEW REQUIRED: invalid identifier or iApp ownership"
+    return (f"tmsh delete gtm server {server}",
+            f"# BEFORE DELETE: tmsh list gtm server {server} all-properties\n"
+            "# ROLLBACK: recreate the entire GSLB Server from a saved, verified configuration\n"
+            "# This includes datacenter, addresses, virtuals, monitors, discovery and dependencies")
+
+
+def non_executable_reference(value: str, missing: str) -> str:
+    """Make every report action visibly NON-executable, including comments."""
+    if not value:
+        value = missing
+    return "\n".join("NOT RUN: " + line for line in str(value).splitlines())
 
 
 def status_is_down(value: str) -> bool:
@@ -142,7 +175,9 @@ def _snapshot_gap_hours(dns_ts: str, ltm_ts: str) -> float | None:
 
 def enrich_cleanup(audit: Audit, snap: Snapshot,
                    ltm_snapshots: dict[str, LtmInventory] | None = None,
-                   max_snapshot_gap_hours: float = 48) -> None:
+                   max_snapshot_gap_hours: float = 48,
+                   ltm_scan: LtmScan | None = None,
+                   ltm_coverage_complete: bool = False) -> None:
     """Add change-review fields to existing reports without changing collector."""
     ltm_snapshots = ltm_snapshots or {}
     results = snap.meta.get("endpoint_results", {})
@@ -160,11 +195,60 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
         for v in snap.datasets.get(f"server_virtuals::{server}", []) or []:
             dns_virtuals[(server, object_id(v))] = v
 
+    def locate(server: str, vs: str, obj: dict[str, Any] | None) -> dict[str, Any]:
+        """Use explicit mapping where supplied; otherwise search every scanned LTM.
+
+        Global absence is insufficient evidence unless the operator explicitly
+        asserts complete coverage with --ltm-coverage-complete.
+        """
+        obj = obj or {}
+        inv = ltm_snapshots.get(server)
+        if not obj:
+            return {"comparison": "UNVERIFIABLE", "location": "", "sources": "",
+                    "timestamp": "", "checked": len(ltm_scan.inventories) if ltm_scan else int(inv is not None),
+                    "negative_ok": False, "fresh": False, "mode": "NO DNS VIRTUAL"}
+        dest = str(obj.get("destination") or obj.get("address") or "")
+        target = str(obj.get("ltmName") or "")
+        if inv:
+            comparison = inv.compare(vs, dest, target)
+            gap = _snapshot_gap_hours(str(snap.meta.get("collected_at") or ""), inv.timestamp)
+            return {"comparison": comparison, "location": inv.host if comparison in (
+                    "PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME", "NAME_PRESENT_ADDRESS_DIFFERS") else "",
+                    "sources": inv.directory, "timestamp": inv.timestamp, "checked": 1,
+                    "negative_ok": True, "fresh": gap is not None and gap <= max_snapshot_gap_hours,
+                    "mode": "EXPLICIT"}
+        if ltm_scan and ltm_scan.inventories:
+            matched = ltm_scan.search(vs, dest, target)
+            gaps = [_snapshot_gap_hours(str(snap.meta.get("collected_at") or ""), i.timestamp)
+                    for i in ltm_scan.inventories]
+            fresh = all(g is not None and g <= max_snapshot_gap_hours for g in gaps)
+            # Even duplicate snapshot warnings may hide topology ambiguities;
+            # do not promote a negative result when discovery is not clean.
+            discovery_clean = not ltm_scan.warnings
+            matched.update({"negative_ok": ltm_coverage_complete and discovery_clean,
+                            "fresh": fresh, "mode": "AUTO SEARCH"})
+            return matched
+        return {"comparison": "NOT_COMPARED", "location": "", "sources": "",
+                "timestamp": "", "checked": 0, "negative_ok": False, "fresh": False,
+                "mode": "NONE"}
+
+    def evidence_columns(row: dict[str, Any], match: dict[str, Any]) -> None:
+        row["LTM Comparison"] = match["comparison"]
+        row["LTM Location"] = match["location"]
+        row["LTM Source"] = match["sources"]
+        row["LTM Snapshot UTC"] = match["timestamp"]
+        row["LTM Scanned"] = match["checked"]
+        row["LTM Search Mode"] = match["mode"]
+
     def setup(row: dict[str, Any], verdict: str, notes: str, delete: str = "", rollback: str = "") -> None:
         row["Verdict"] = verdict
         row["Notes"] = notes
-        row["Delete"] = delete
-        row["Rollback"] = rollback
+        row["Delete"] = non_executable_reference(delete or row.get("_ref_delete", ""),
+                                                 "No safe deletion command: manual inspection required") if (
+                                                 "_ref_delete" in row or delete) else ""
+        row["Rollback"] = non_executable_reference(rollback or row.get("_ref_rollback", ""),
+                                                   "Restore from verified pre-change backup") if (
+                                                   "_ref_rollback" in row or rollback) else ""
 
     for row in audit.wideips:
         if row["Config"] == "DISABLED":
@@ -180,6 +264,9 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
         rr, pool, raw = row["Type"].lower(), row["Pool"], row["Member"]
         raw_data = next((item for item in snap.datasets.get(f"pool_members::{rr}::{pool}", [])
                          if str(item.get("fullPath") or item.get("name") or item.get("virtualServer") or "") == raw), {})
+        row["_ref_delete"], row["_ref_rollback"] = prepared_member_commands(rr, pool, raw, raw_data)
+        row["LTM Location"] = ""
+        row["LTM Scanned"] = len(ltm_scan.inventories) if ltm_scan else len(ltm_snapshots)
         server = str(row.get("GSLB Server") or "")
         vs = str(row.get("Virtual Server") or "")
         # Some GSLB pool members remain after their server-side VS disappears.
@@ -208,42 +295,39 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
             base = "Pool Member refers to a GSLB Virtual Server absent from the collected GSLB Server inventory"
         else:
             base = "Pool Member references an existing GSLB Virtual Server"
-        inv = ltm_snapshots.get(server)
-        if inv is None:
-            comp = "NOT_COMPARED"
-            notes = base + "; supply --ltm-raw GSLB_SERVER=PATH to compare with F5Audit LTM"
+        evidence = locate(server, vs, dns_virtual)
+        comp = evidence["comparison"]
+        evidence_columns(row, evidence)
+        notes = (base + f"; LTM search={evidence['mode']}; result={comp}; "
+                 f"snapshots_checked={evidence['checked']}")
+        if comp == "NOT_COMPARED":
             verdict = "MANUAL REVIEW" if not dns_virtual or status_is_down(row["Health"]) else "IN USE"
-        else:
-            dest = str((dns_virtual or {}).get("destination") or (dns_virtual or {}).get("address") or "")
-            ltm_name = str((dns_virtual or {}).get("ltmName") or "")
-            # If DNS VS is absent, there is no destination to cross-check:
-            # lacking this address means we cannot prove it was deleted.
-            comp = inv.compare(vs, dest, ltm_name) if dns_virtual else "UNVERIFIABLE"
-            notes = f"{base}; LTM snapshot {inv.host} at {inv.timestamp}; result={comp}"
-            age_gap = _snapshot_gap_hours(str(snap.meta.get("collected_at") or ""), inv.timestamp)
-            if comp == "NOT_FOUND" and static_complete and dns_virtual and age_gap is not None and age_gap <= max_snapshot_gap_hours:
+            notes += "; no LTM inventories given: use --ltm-raw-dir DIR"
+        elif comp in ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME"):
+            verdict = "IN USE" if evidence["fresh"] and not status_is_down(row["Health"]) else "MANUAL REVIEW"
+            notes += f"; found at {evidence['location']}; validate if stale/health differs"
+        elif comp == "NAME_PRESENT_ADDRESS_DIFFERS":
+            verdict = "MANUAL REVIEW"
+            notes += "; VS name exists, but destination differs; possible migration"
+        elif comp in ("NOT_FOUND", "NOT_FOUND_IN_SCANNED_LTMS"):
+            if static_complete and dns_virtual and evidence["fresh"] and evidence["negative_ok"]:
                 verdict = "OFFLINE (decommission candidate)"
-                notes += "; candidate only after verifying live F5 and deployment/DR plan"
-            elif comp == "PRESENT" and dns_virtual:
-                verdict = "IN USE" if not status_is_down(row["Health"]) else "MANUAL REVIEW"
+                notes += "; ALL required evidence provided; verify live device, HA, DNS/DR before change"
             else:
                 verdict = "MANUAL REVIEW"
-        row["LTM Comparison"] = comp
-        row["LTM Source"] = inv.directory if inv else ""
-        row["LTM Snapshot UTC"] = inv.timestamp if inv else ""
-        if verdict == "OFFLINE (decommission candidate)":
-            command, restore = prepared_member_commands(rr, pool, raw, raw_data)
-            if not command:
-                verdict = "MANUAL REVIEW"
-                notes += "; cannot safely render tmsh command"
-            setup(row, verdict, notes, command, restore)
+                notes += "; absence in scanned inventory is NOT proof of removal; coverage/staleness or references unverified"
         else:
-            setup(row, verdict, notes)
+            verdict = "MANUAL REVIEW"
+        if verdict == "OFFLINE (decommission candidate)" and not row["_ref_delete"]:
+            verdict = "MANUAL REVIEW"
+            notes += "; command safety check failed"
+        setup(row, verdict, notes)
 
     for row in audit.pools:
         rr, pool = row["Type"].lower(), row["Pool"]
         obj = pool_objects.get((rr, pool), {})
         members = snap.datasets.get(f"pool_members::{rr}::{pool}")
+        row["_ref_delete"], row["_ref_rollback"] = prepared_pool_commands(rr, pool, obj, members or [])
         referenced = bool(row["Referenced by"])
         if not referenced and static_complete:
             cmd, restore = prepared_pool_commands(rr, pool, obj, members)
@@ -270,41 +354,34 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
         server = server_objects.get(srv, {})
         discovery = str(server.get("virtualServerDiscovery") or "unknown").lower()
         refs = [m for m in audit.members if (m.get("GSLB Server"), m.get("Virtual Server")) == (srv, vs)]
-        inv = ltm_snapshots.get(srv)
         source = dns_virtuals.get((srv, vs), {})
-        comparison = inv.compare(vs, str(row.get("Destination") or ""), str(source.get("ltmName") or "")) if inv else "NOT_COMPARED"
-        row["LTM Comparison"] = comparison
+        row["_ref_delete"], row["_ref_rollback"] = prepared_virtual_commands(srv, vs, source, server)
+        evidence = locate(srv, vs, source)
+        comparison = evidence["comparison"]
+        evidence_columns(row, evidence)
         if discovery != "disabled":
-            setup(row, "MANUAL REVIEW", f"Discovery mode={discovery}; object may be automatically managed")
-        elif comparison == "NOT_FOUND" and static_complete and (
-                inv is not None and (gap := _snapshot_gap_hours(str(snap.meta.get("collected_at") or ""), inv.timestamp)) is not None
-                and gap <= max_snapshot_gap_hours):
-            notes = ("Not present in explicitly mapped LTM Virtual Server inventory; "
-                     "confirm live state and business/DR dependencies before removal")
+            setup(row, "MANUAL REVIEW", f"Discovery mode={discovery}; GSLB Virtual Server may be automatically managed/recreated")
+        elif comparison in ("NOT_FOUND", "NOT_FOUND_IN_SCANNED_LTMS") and static_complete and (
+                evidence["fresh"] and evidence["negative_ok"]):
+            notes = ("Virtual Server absent from verified LTM snapshot coverage; "
+                     "confirm live state, HA, DNS and DR dependencies before removal")
             if refs:
                 notes += f"; remove {len(refs)} referencing GSLB Pool Member(s) FIRST"
-            if safe_object(srv) and safe_object(vs) and not source.get("appService") and not server.get("appService"):
-                delete = f"tmsh modify gtm server {srv} virtual-servers delete {{ {vs} }}"
-                restore = f"# BEFORE DELETE: tmsh list gtm server {srv} all-properties\n"
-                dest = str(row.get("Destination") or "")
-                # Do not pretend to recreate a complete VS if its REST response
-                # does not include a usable destination and settings.
-                if dest and re.fullmatch(r"[A-Za-z0-9.:%_-]+", dest):
-                    restore += (f"# RE-ADD: review and complete original properties\n"
-                                f"tmsh modify gtm server {srv} virtual-servers add {{ {vs} {{ destination {dest} }} }}\n")
-                restore += "# Verify against saved complete tmsh configuration"
-                setup(row, "OFFLINE (decommission candidate)", notes, delete, restore)
+            if row["_ref_delete"]:
+                setup(row, "OFFLINE (decommission candidate)", notes)
             else:
-                setup(row, "MANUAL REVIEW", notes + "; complex owner/identifier prevents command proposal")
+                setup(row, "MANUAL REVIEW", notes + "; command safety check failed")
         elif comparison in ("NAME_PRESENT_ADDRESS_DIFFERS", "ADDRESS_PRESENT_DIFFERENT_NAME"):
-            setup(row, "MANUAL REVIEW", f"GSLB vs LTM destination mismatch: {comparison}; may have been renamed or moved")
+            setup(row, "MANUAL REVIEW", f"GSLB vs LTM name/destination mismatch: {comparison}; may be a migration")
+        elif comparison == "PRESENT" and not evidence["fresh"]:
+            setup(row, "MANUAL REVIEW", "LTM Virtual Server found but its snapshot is too old or timestamp unknown")
         elif refs:
             setup(row, "IN USE" if comparison in ("PRESENT", "NOT_COMPARED") else "MANUAL REVIEW",
-                  "GSLB Virtual Server is referenced by a Pool Member")
+                  "GSLB Virtual Server referenced by a Pool Member; LTM comparison=" + comparison)
         elif not all_members or not all_core:
             setup(row, "UNRELIABLE", "Pool Member inventory is incomplete")
         else:
-            setup(row, "MANUAL REVIEW", "No Pool Member reference; check depends-on, topology, discovery and iRules")
+            setup(row, "MANUAL REVIEW", "No Pool Member reference; check depends-on, topology, discovery and iRules; LTM=" + comparison)
 
     # A referenced Pool with every member retired is not automatically orphaned:
     # removing it would also require updating its Wide IP associations.
@@ -317,6 +394,13 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
                       "remove members, assess last resort and detach Wide IP before considering Pool removal")
 
     for row in audit.servers:
+        server = row["Server"]
+        row["_ref_delete"], row["_ref_rollback"] = prepared_server_commands(server, server_objects.get(server, {}))
+        matched_locations = sorted({x.strip() for v in audit.virtuals if v["Server"] == server
+                                    for x in v.get("LTM Location", "").split(",") if x.strip()})
+        row["LTM Location"] = ", ".join(matched_locations)
+        row["LTM Comparison"] = "PRESENT" if matched_locations else (
+            "NO_MATCH_IN_SCANNED_LTMS" if ltm_scan and ltm_scan.inventories else "NOT_COMPARED")
         if row.get("Referenced by member"):
             setup(row, "IN USE", "GSLB Server is referenced by a Pool Member")
         else:
@@ -332,22 +416,53 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
                        and m["Type"] == row["Type"]), None)
         pool = next((p for p in audit.pools if p["Pool"] == row["Pool"] and p["Type"] == row["Type"]), None)
         source = member or pool
+        row["LTM Location"] = (source or {}).get("LTM Location", "")
+        row["LTM Comparison"] = (source or {}).get("LTM Comparison", "")
         setup(row, str((source or {}).get("Verdict", "MANUAL REVIEW")),
               str((source or {}).get("Notes", "No resolved resource")))
 
     audit.candidates = []
     for label, group, name_col in (("POOL MEMBER", audit.members, "Member"),
-                                       ("GSLB VIRTUAL SERVER", audit.virtuals, "Virtual Server"),
-                                       ("POOL", audit.pools, "Pool")):
+                                   ("GSLB VIRTUAL SERVER", audit.virtuals, "Virtual Server"),
+                                   ("POOL", audit.pools, "Pool")):
         for row in group:
-            if row.get("Delete"):
-                audit.candidates.append({"Type": label, "Object": row[name_col], "GSLB Pool": row.get("Pool", ""), "GSLB Server": row.get("Server", ""),
-                    "Record Type": row.get("Type", ""), "Verdict": row["Verdict"], "Notes": row["Notes"],
-                    "Delete": row["Delete"], "Rollback": row["Rollback"]})
+            # Reference actions exist for ALL objects, but the candidates tab
+            # includes ONLY classifications that merit cleanup consideration.
+            if (row.get("Verdict") == "ORPHAN" if label == "POOL" else
+                row.get("Verdict") == "OFFLINE (decommission candidate)") and (
+                    row.get("Delete", "").startswith("NOT RUN: tmsh ")):
+                audit.candidates.append({
+                    "Type": label, "Object": row[name_col], "GSLB Pool": row.get("Pool", ""),
+                    "GSLB Server": row.get("GSLB Server", row.get("Server", "")),
+                    "LTM Location": row.get("LTM Location", ""),
+                    "LTM Comparison": row.get("LTM Comparison", ""),
+                    "Record Type": row.get("Type", ""), "Verdict": row["Verdict"],
+                    "Notes": row["Notes"], "Delete": row["Delete"], "Rollback": row["Rollback"],
+                })
+
+    for group in (audit.members, audit.virtuals, audit.pools, audit.servers):
+        for row in group:
+            row.pop("_ref_delete", None)
+            row.pop("_ref_rollback", None)
+
+    inventory = list(ltm_snapshots.values())
+    if ltm_scan:
+        inventory += [x for x in ltm_scan.inventories if x.directory not in {i.directory for i in inventory}]
+    for inv in inventory:
+        audit.ltm_inventory.append({
+            "Hostname": inv.host, "Snapshot UTC": inv.timestamp, "Raw Folder": inv.directory,
+            "Virtual Servers": len(inv.virtuals), "Status": "VALID",
+        })
+    if ltm_scan:
+        for warning in ltm_scan.warnings:
+            audit.ltm_inventory.append({"Hostname": "", "Snapshot UTC": "", "Raw Folder": "",
+                                        "Virtual Servers": "", "Status": warning})
 
     audit.summary.extend([
-        {"Metric": "Cleanup candidates with tmsh proposal", "Value": len(audit.candidates)},
-        {"Metric": "F5Audit LTM snapshots supplied", "Value": len(ltm_snapshots)},
+        {"Metric": "Cleanup candidates with reference commands", "Value": len(audit.candidates)},
+        {"Metric": "F5Audit LTM snapshots loaded", "Value": len(inventory)},
+        {"Metric": "LTM automatic inventory coverage confirmed", "Value": "YES" if ltm_coverage_complete else "NO"},
+        {"Metric": "LTM snapshot validation warnings", "Value": len(ltm_scan.warnings) if ltm_scan else 0},
         {"Metric": "Maximum allowed snapshot gap (hours)", "Value": max_snapshot_gap_hours},
         {"Metric": "GSLB static reference analysis complete", "Value": "YES" if static_complete else "NO"},
         {"Metric": "Operations executed on BIG-IP", "Value": "NONE (read-only)"},

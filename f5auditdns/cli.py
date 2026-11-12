@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .analyzer import analyze
-from .ltm_compare import parse_ltm_mappings, LtmSnapshotError
+from .ltm_compare import parse_ltm_mappings, discover_ltm_snapshots, LtmSnapshotError
 from .client import F5ClientError, F5ReadOnlyClient
 from .collector import Collector, Snapshot, SnapshotError, validate
 from .report import as_csv, as_excel
@@ -94,6 +94,8 @@ Examples (DNS hostname / FQDN):
 Analyze the snapshot (offline):
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl"
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits -o DNS_Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --ltm-coverage-complete -o DNS_Cleanup.xlsx
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 
@@ -124,8 +126,12 @@ and the final output prints an analyze command you can copy and paste.
     analyze_examples = r"""Examples (no BIG-IP connection needed):
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl" -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw "GDL-F5=.\ltm_gdl_raw" --ltm-raw "QRO-F5=.\ltm_qro_raw"
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\AllLTM_RAW -o .\DNS_Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\AllLTM_RAW --ltm-coverage-complete
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl"
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits -o DNS_Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --ltm-coverage-complete -o DNS_Cleanup.xlsx
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 """
@@ -163,6 +169,11 @@ and the final output prints an analyze command you can copy and paste.
             sub.add_argument("--from-raw", required=True, help="Previously collected snapshot directory")
             sub.add_argument("--ltm-raw", action="append", default=[], metavar="GSLB_SERVER=PATH",
                              help="Optional F5Audit LTM raw snapshot mapped to a DNS GSLB Server; repeat per server")
+            sub.add_argument("--ltm-raw-dir", action="append", default=[], metavar="DIR",
+                             help="Auto-discover any number of F5Audit LTM raw snapshots under DIR; recursive; repeatable")
+            sub.add_argument("--ltm-coverage-complete", action="store_true",
+                             help="Operator confirms ALL relevant LTM devices are represented by the supplied snapshots; "
+                                  "required for automatic absence-based cleanup candidates with --ltm-raw-dir")
             sub.add_argument("--max-snapshot-gap-hours", type=float, default=48, metavar="HOURS",
                              help="Maximum DNS vs LTM snapshot time difference for candidates (default: 48h)")
             sub.add_argument("-o", "--out", default="F5_DNS_Audit.xlsx", help="Output .xlsx or CSV directory")
@@ -235,7 +246,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.max_snapshot_gap_hours <= 0:
             raise ValueError("--max-snapshot-gap-hours must be positive")
         ltm_snapshots = parse_ltm_mappings(args.ltm_raw)
-        audit = analyze(snapshot, ltm_snapshots, args.max_snapshot_gap_hours)
+        if args.ltm_coverage_complete and not args.ltm_raw_dir:
+            raise ValueError("--ltm-coverage-complete requires --ltm-raw-dir")
+        ltm_scan = discover_ltm_snapshots(args.ltm_raw_dir) if args.ltm_raw_dir else None
+        if ltm_scan and not ltm_scan.inventories:
+            raise LtmSnapshotError("No valid F5Audit LTM raw snapshots found under --ltm-raw-dir")
+        if ltm_scan:
+            print(f"LTM auto-discovery: {len(ltm_scan.inventories)} valid snapshot(s) "
+                  f"| warnings: {len(ltm_scan.warnings)} | coverage confirmed: "
+                  f"{'YES' if args.ltm_coverage_complete else 'NO'}")
+            for inv in ltm_scan.inventories:
+                print(f"  LTM {inv.host} | {len(inv.virtuals)} VS | {inv.directory}")
+            for warning in ltm_scan.warnings:
+                print(f"  WARNING: {warning}")
+        audit = analyze(snapshot, ltm_snapshots, args.max_snapshot_gap_hours,
+                        ltm_scan=ltm_scan, ltm_coverage_complete=args.ltm_coverage_complete)
         if args.format == "csv":
             paths = as_csv(audit, args.out)
             print(f"Generated {len(paths)} CSV files in {args.out}")
@@ -245,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wide IPs: {len(audit.wideips)} | Pools: {len(audit.pools)} "
               f"| Members: {len(audit.members)} | Review items: {len(audit.manual_review)} "
               f"| Cleanup candidates: {len(audit.candidates)}")
-        print("Delete/Rollback are proposals only: no changes made to BIG-IP.")
+        print("Delete/Rollback are NOT RUN reference commands only; no changes made to BIG-IP.")
         return 0
     except (F5ClientError, SnapshotError, LtmSnapshotError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

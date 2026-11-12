@@ -1,6 +1,6 @@
 # F5AuditDNS — Auditoría de F5 BIG-IP DNS / GSLB
 
-**Versión:** 0.2.0 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
+**Versión:** 0.3.0 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
 **Plataformas:** Windows / Linux / macOS, Python 3.9+  
 **Proyecto independiente:** no modifica, instala ni importa `f5audit` (LTM).
 
@@ -175,20 +175,20 @@ Para regenerar el snapshot ficticio, vacía antes la carpeta y ejecuta:
 python .\examples\generate_sample.py
 ```
 
-## 3.7 Cleanup DNS con columnas Verdict / Notes / Delete / Rollback (v0.2.0)
+## 3.7 Cleanup DNS con columnas Verdict / Notes / Delete / Rollback (v0.3.0)
 
 El informe diferencia entre **objetos sin referencias** y **objetos que realmente desaparecieron del LTM**.
 
 | Veredicto | Interpretación | Comando propuesto |
 |---|---|---|
-| `IN USE` | El objeto sigue referenciado o se encontró en el snapshot LTM | No |
+| `IN USE` | El objeto sigue referenciado o se encontró en algún snapshot LTM | Sí: referencia NOT RUN, no candidato |
 | `ORPHAN` | Pool sin referencias estáticas; inventarios completos y sin referencias GTM dinámicas | Sí, solo para Pools elegibles |
-| `INACTIVE` | Wide IP o Pool deshabilitado | No; puede ser de contingencia |
+| `INACTIVE` | Wide IP o Pool deshabilitado | Referencia NOT RUN para Pool; puede ser contingencia |
 | `OFFLINE (decommission candidate)` | Un VS GSLB o Pool Member apunta a una VIP ausente en su LTM explícitamente mapeado y el snapshot es reciente | Sí, con prerrequisitos y respaldo |
-| `MANUAL REVIEW` | DOWN, inconsistente, iRule, fallback u otra dependencia posible | No |
-| `UNRELIABLE` | Faltan datos/permisos o no se resolvió la identidad | No |
+| `MANUAL REVIEW` | DOWN, inconsistente, iRule, fallback u otra dependencia posible | Referencia NOT RUN cuando la sintaxis es segura; no candidato |
+| `UNRELIABLE` | Faltan datos/permisos o no se resolvió la identidad | Solo referencia segura o aviso de inspección manual |
 
-**No interpretes un Pool Member de GSLB como un Node backend de LTM.** GSLB suele apuntar a una VIP de aplicación, y F5Audit LTM tiene que inspeccionar su Pool/Nodes por separado. La v0.2.0 compara el **Virtual Server y su dirección de destino** con el inventario LTM, no todos los backend Pool Members.
+**No interpretes un Pool Member de GSLB como un Node backend de LTM.** GSLB suele apuntar a una VIP de aplicación, y F5Audit LTM tiene que inspeccionar su Pool/Nodes por separado. La v0.3.0 compara el **Virtual Server y su dirección de destino** con el inventario LTM, no todos los backend Pool Members.
 
 ### Sin comparación LTM: detectar Pools potencialmente huérfanos
 
@@ -213,22 +213,113 @@ En PowerShell, escribe el comando en una sola línea o usa acento grave (backtic
 
 La asociación es **explícita** porque el nombre de un Server GTM no necesariamente coincide con el hostname administrativo del dispositivo LTM. No asumas la identidad por parecido de nombres. Si faltan los snapshots o la diferencia de hora entre DNS y LTM supera 48 h, la herramienta no promoverá la ausencia a candidato. Puedes ajustar ese umbral con `--max-snapshot-gap-hours 24`.
 
+### v0.3.0: buscar automáticamente en cualquier cantidad de RAW LTM
+
+Ejecuta **un DNS a la vez**. El proyecto no compara DNS peers ni audita Sync Groups.
+Guarda todas tus carpetas RAW de F5Audit LTM dentro de un directorio, con
+subcarpetas de cualquier profundidad. Por ejemplo:
+
+```text
+Audits/
+  dns01_raw/
+  TodosLosLTM/
+    ltm01/raw/_meta.json + ltm_virtual@Common.json + auth_partition.json
+    ltm02/raw/_meta.json + ltm_virtual@Common.json + auth_partition.json
+    ltm03/raw/_meta.json + ltm_virtual@Common.json + auth_partition.json
+    ... (uno, seis, diez o cualquier cantidad)
+```
+
+En **PowerShell**:
+
+```powershell
+f5auditdns analyze `
+  --from-raw ".\Audits\dns01_raw" `
+  --ltm-raw-dir ".\Audits\TodosLosLTM" `
+  -o ".\DNS01_Cleanup.xlsx"
+```
+
+`--ltm-raw-dir` se puede repetir con varias carpetas raíz. No necesitas especificar
+manualmente los nombres de los GSLB Servers. El auditor examina inventarios LTM
+válidos, elimina duplicados de hostname conservando la captura más reciente,
+y muestra en `LTM Location` **los hostnames de los LTM donde aparece la VIP**.
+Si una VIP está configurada en ambos miembros de HA, aparecerán ambos nombres.
+No se asume una topología fija de cinco pares ni se exige HA: funciona con uno
+solo o con cualquier cantidad de BIG-IP LTM, también standalone.
+
+**Reglas de evidencia:**
+
+- `PRESENT` = se encontró el nombre + dirección en al menos un RAW LTM.
+- `ADDRESS_PRESENT_DIFFERENT_NAME` = la IP:puerto existe, pero su nombre es distinto.
+- `NAME_PRESENT_ADDRESS_DIFFERS` = el nombre existe, pero la IP:puerto es distinta.
+- `NOT_FOUND_IN_SCANNED_LTMS` = no existe en los snapshots *escaneados*.
+  **NO significa** que la VIP esté eliminada de toda la infraestructura.
+- Las ausencias globales quedan en `MANUAL REVIEW` por defecto, aunque solo
+  haya un RAW. Así se evitan falsos positivos en instalaciones incompletas.
+
+Si **tú confirmaste previamente** que el directorio contiene todos los LTM
+relevantes para ese DNS, puedes habilitar la evaluación de ausencia para
+candidatos, en conjunto con inventarios completos, referencias confiables y
+capturas recientes (48 horas de diferencia por defecto):
+
+```powershell
+f5auditdns analyze `
+  --from-raw ".\Audits\dns01_raw" `
+  --ltm-raw-dir ".\Audits\TodosLosLTM" `
+  --ltm-coverage-complete `
+  -o ".\DNS01_Cleanup_Reviewed.xlsx"
+```
+
+Este flag es una **declaración explícita del operador**: la herramienta no puede
+probar por sí sola que existen RAW de todos los LTM relevantes. Si falta algún
+inventario, hay archivos inválidos o son antiguos, **no** se genera una
+conclusión negativa de confianza. El estado `OFFLINE` y la clasificación de
+cleanup requieren validación adicional con los dispositivos en vivo.
+
+### Comandos de referencia NOT RUN (todos los servidores y miembros)
+
+Las columnas `Delete` y `Rollback` de `Pool Members`, `GSLB Virtual Servers`,
+`GSLB Pool Findings` y `GSLB Servers` ahora incluyen referencias **aunque el
+objeto sea `IN USE`**. Cada línea empieza con `NOT RUN:` para impedir que el
+reporte parezca un script listo para ejecutar. Ejemplo:
+
+```text
+Verdict: IN USE
+LTM Location: ltm-gdl-a, ltm-gdl-b
+Delete:   NOT RUN: tmsh modify gtm pool a /Common/pool_app members delete { /Common/GDL-F5:/Common/vs_app }
+Rollback: NOT RUN: # BEFORE DELETE: tmsh list gtm pool a /Common/pool_app all-properties
+          NOT RUN: # Review member attributes before re-adding
+          NOT RUN: tmsh modify gtm pool a /Common/pool_app members add { /Common/GDL-F5:/Common/vs_app { enabled ratio 1 } }
+          NOT RUN: # Verify against saved full tmsh config
+```
+
+**Una referencia NO es autorización de borrado.** La hoja `Cleanup Candidates`
+conserva únicamente objetos con veredicto elegible, no todos los que tienen
+un comando. Para `GSLB Server` y `Pool`, la restauración exacta necesita una
+copia fiel de la configuración previa; no es seguro fabricar una instrucción
+`create` completa a partir de un JSON incompleto. Para Virtual Servers con
+descubrimiento automático, la referencia de borrado puede resultar inválida
+u ocasionar que el objeto reaparezca; siempre se clasifica para revisión.
+
+**Vocabulario:** `GSLB Server` es un objeto de BIG-IP DNS; `LTM Location` indica
+el dispositivo físico (hostname del snapshot F5Audit LTM) donde encontramos
+la VIP del GSLB Virtual Server. No equivale a un Node backend.
+
 ### Ejemplo con snapshots ficticios incluidos
 
 ```powershell
 f5auditdns analyze --from-raw .\examples\raw_cleanup_simulado --ltm-raw "/Common/GDL-F5=.\examples\ltm_raw_gdl_simulado" -o .\DNS_Cleanup_Demo.xlsx
 ```
 
-La salida incluye `Cleanup Candidates` con `Delete` y `Rollback`. Para un miembro retirado, se propone:
+La salida incluye `Cleanup Candidates` con `Delete` y `Rollback`, y una hoja `LTM Inventories`. Para un miembro retirado, se propone:
 
 ```text
-tmsh modify gtm pool a /Common/pool_retired members delete { /Common/GDL-F5:/Common/vs_retired }
+NOT RUN: tmsh modify gtm pool a /Common/pool_retired members delete { /Common/GDL-F5:/Common/vs_retired }
 ```
 
 Y para restaurar, si se aprobaron los valores exactos del miembro:
 
 ```text
-tmsh modify gtm pool a /Common/pool_retired members add { /Common/GDL-F5:/Common/vs_retired { enabled ratio 1 } }
+NOT RUN: tmsh modify gtm pool a /Common/pool_retired members add { /Common/GDL-F5:/Common/vs_retired { enabled ratio 1 } }
 ```
 
 **Orden recomendado:** retirar primero la referencia del Pool Member, luego revisar si el Virtual Server GSLB ya está sin referencias, y solo después considerar eliminar el Pool, únicamente si se desvinculó de todos los Wide IPs y Last Resort Pools. Antes del cambio, guarda el resultado completo de `tmsh list gtm pool ... all-properties` y `tmsh list gtm server ... all-properties`. Los comandos de rollback parciales deben completarse con todos los atributos originales. **No ejecutar ningún comando solo por aparecer en el Excel.**
@@ -237,7 +328,7 @@ tmsh modify gtm pool a /Common/pool_retired members add { /Common/GDL-F5:/Common
 
 Para probar la correlación en producción necesitamos ejemplos anonimizados de: `tmsh list gtm pool a <pool> all-properties`, `tmsh list gtm server <server> all-properties`, snapshots RAW DNS y LTM tomados en una ventana cercana, y la versión exacta de TMOS. No compartas credenciales, tokens ni direcciones sensibles sin anonimizar.
 
-## 4. Hojas de reporte (12)
+## 4. Hojas de reporte (13)
 
 | Hoja Excel | Pregunta que responde |
 |---|---|
@@ -249,7 +340,8 @@ Para probar la correlación en producción necesitamos ejemplos anonimizados de:
 | GSLB Virtual Servers | ¿Qué servicios tiene cada Server? |
 | Data Centers | ¿Cuántos GSLB Servers están asociados? |
 | DNS Chains | ¿Cuál es la cadena Wide IP → Pool → Member → Server → VS? |
-| Cleanup Candidates | Acciones de limpieza propuestas, ordenadas: miembros → GSLB virtual servers → pools |
+| Cleanup Candidates | Solo candidatos: acciones propuestas, ordenadas: miembros → GSLB virtual servers → pools |
+| LTM Inventories | Hostname, snapshot y carpeta de cada LTM incluido automáticamente |
 | Manual Review | ¿Qué referencias o configuraciones necesitan revisión? |
 | Auxiliary Inventory | ¿Qué Monitors, iRules, Listeners, etc. fueron recopilados? |
 | Collection Health | ¿Qué consultas API fueron completadas, rechazadas o faltan? |
@@ -313,7 +405,7 @@ F5AuditDNS/
 └── pyproject.toml
 ```
 
-## 7. Limitaciones conocidas de v0.2.0
+## 7. Limitaciones conocidas de v0.3.0
 
 1. **No validada contra dispositivos reales.** Se deben confirmar propiedades, referencias y permisos con la versión TMOS de tu ambiente.
 2. Las rutas REST de las subcolecciones y los datos devueltos pueden diferir entre versiones. Si no hay pruebas concluyentes, se marca `UNKNOWN`.

@@ -21,6 +21,7 @@ SHEETS = [
     ("Data Centers", "datacenters"),
     ("DNS Chains", "chains"),
     ("Cleanup Candidates", "candidates"),
+    ("LTM Inventories", "ltm_inventory"),
     ("Manual Review", "manual_review"),
     ("Auxiliary Inventory", "auxiliary"),
     ("Collection Health", "collection_health"),

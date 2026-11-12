@@ -1,0 +1,10 @@
+{
+  "key": "ltm_virtual@Common",
+  "data": [
+    {
+      "fullPath": "/Common/vs_app",
+      "partition": "Common",
+      "destination": "/Common/198.51.100.100:443"
+    }
+  ]
+}

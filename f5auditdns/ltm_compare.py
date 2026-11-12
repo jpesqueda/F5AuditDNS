@@ -129,3 +129,93 @@ def parse_ltm_mappings(args: list[str] | None) -> dict[str, LtmInventory]:
             raise LtmSnapshotError(f"Duplicate GSLB Server mapping: {key}")
         out[key] = LtmInventory.load(path.strip().strip('"'))
     return out
+
+
+@dataclass
+class LtmScan:
+    """Complete, read-only LTM snapshots found under user-provided roots.
+
+    An absent VS in these snapshots is not proof that the relevant LTM was
+    included. Negative evidence is explicitly labeled as scanned-only.
+    """
+    inventories: list[LtmInventory]
+    warnings: list[str]
+    directories: list[str]
+
+    def search(self, virtual_path: str, destination: str, ltm_name: str = "") -> dict[str, Any]:
+        if not self.inventories:
+            return {"comparison": "NOT_COMPARED", "location": "", "sources": "",
+                    "timestamp": "", "matched": [], "checked": 0}
+        if not destination and not (virtual_path or ltm_name):
+            return {"comparison": "UNVERIFIABLE", "location": "", "sources": "",
+                    "timestamp": "", "matched": [], "checked": len(self.inventories)}
+        rows = [(inv, inv.compare(virtual_path, destination, ltm_name)) for inv in self.inventories]
+        priority = ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME", "NAME_PRESENT_ADDRESS_DIFFERS")
+        comparison = next((p for p in priority if any(v == p for _, v in rows)), "NOT_FOUND_IN_SCANNED_LTMS")
+        # A VIP found with its correct address but under a different VS name
+        # is still present on that LTM. Include such devices alongside exact
+        # matches, e.g. a pair of HA devices with different VS names.
+        found_states = ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME") if comparison in (
+            "PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME") else (comparison,)
+        matched = [(inv, result) for inv, result in rows if result in found_states] if comparison in priority else []
+        return {
+            "comparison": comparison,
+            "location": ", ".join(inv.host for inv, _ in matched),
+            "sources": "; ".join(inv.directory for inv, _ in matched),
+            "timestamp": "; ".join(f"{inv.host}: {inv.timestamp}" for inv, _ in matched),
+            "matched": matched,
+            "checked": len(rows),
+        }
+
+
+def discover_ltm_snapshots(roots: list[str] | None) -> LtmScan:
+    """Recursively discover F5Audit LTM snapshots, independently of host count.
+
+    Only folders containing LTM-specific dataset filenames are inspected.
+    Repeated snapshots of the SAME host are consolidated to the most recent
+    collection. An invalid LTM snapshot is reported, never silently treated as
+    evidence of a missing virtual server.
+    """
+    from datetime import datetime
+
+    inventories: dict[str, LtmInventory] = {}
+    warnings: list[str] = []
+    observed: set[Path] = set()
+    dirs: list[str] = []
+    for root_text in roots or []:
+        root = Path(root_text).expanduser()
+        if not root.is_dir():
+            raise LtmSnapshotError(f"LTM raw directory does not exist: {root}")
+        dirs.append(str(root))
+        meta_paths = [root / "_meta.json"] if (root / "_meta.json").is_file() else []
+        meta_paths += sorted(root.rglob("_meta.json"))
+        for meta in meta_paths:
+            directory = meta.parent.resolve()
+            if directory in observed:
+                continue
+            observed.add(directory)
+            if not any(directory.glob("ltm_virtual@*.json")):
+                continue  # Non-LTM JSON snapshots can share a parent directory.
+            try:
+                inv = LtmInventory.load(directory)
+            except LtmSnapshotError as exc:
+                warnings.append(f"INVALID LTM SNAPSHOT {directory}: {exc}")
+                continue
+            if not inv.host.strip():
+                warnings.append(f"INVALID LTM SNAPSHOT {directory}: host missing in _meta.json")
+                continue
+            key = inv.host.strip().casefold()
+            prev = inventories.get(key)
+            if prev is None:
+                inventories[key] = inv
+            else:
+                def dt(value: str):
+                    try:
+                        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+                    except (ValueError, OverflowError):
+                        return float("-inf")
+                chosen = inv if dt(inv.timestamp) > dt(prev.timestamp) else prev
+                skipped = prev if chosen is inv else inv
+                inventories[key] = chosen
+                warnings.append(f"Older duplicate for {inv.host} ignored: {skipped.directory}")
+    return LtmScan(sorted(inventories.values(), key=lambda inv: (inv.host.lower(), inv.directory)), warnings, dirs)

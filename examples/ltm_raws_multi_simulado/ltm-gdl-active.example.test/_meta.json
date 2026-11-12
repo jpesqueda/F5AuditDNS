@@ -1,0 +1,7 @@
+{
+  "host": "ltm-gdl-active.example.test",
+  "collected_at": "2026-11-11T20:05:00+00:00",
+  "aborted": null,
+  "denied": [],
+  "missing_endpoints": []
+}

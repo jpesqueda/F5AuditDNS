@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "f5auditdns"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read-only, evidence-first audit for F5 BIG-IP DNS GSLB with offline JSON snapshots and Excel/CSV reports"
 readme = "README.md"
 requires-python = ">=3.9"

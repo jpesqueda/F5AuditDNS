@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] — 2026-11-12
+
+- Analyze exactly one BIG-IP DNS at a time; DNS peer and Sync Group audits are out of scope.
+- Add repeated `--ltm-raw-dir DIR`, recursively discovering any number of original F5Audit LTM RAW snapshots.
+- Display `LTM Location`, evidence, scanned count and sources in member/virtual/server reports, without assuming an HA topology.
+- Require explicit `--ltm-coverage-complete` before promoting an absence across auto-discovered inventories to a cleanup candidate.
+- Preserve `--ltm-raw GSLB_SERVER=DIR` for explicit and evidence-rich comparisons.
+- Add `NOT RUN:` text references for Delete and Rollback on in-use and noncandidate GSLB Pools, Pool Members, Virtual Servers, and Servers. No actions run.
+- Keep Cleanup Candidates restricted to eligible, reviewed candidates; add `LTM Inventories` worksheet (13 sheets).
+- Deduplicate repeated LTM host snapshots by most recent collection; reject corrupt/partial evidence for removal decisions.
+- Validate with automated unit/integration tests using 1 and 10 simulated LTM snapshots.
+
+
 ## [0.2.0] — 2026-11-11
 
 - Add Verdict / Notes / Delete / Rollback to GSLB inventories, and a dedicated Cleanup Candidates sheet (12 total).

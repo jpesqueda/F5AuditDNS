@@ -27,6 +27,7 @@ class Audit:
     auxiliary: list[dict[str, Any]] = field(default_factory=list)
     collection_health: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
+    ltm_inventory: list[dict[str, Any]] = field(default_factory=list)
 
 
 def normalize_path(value: Any, partition: str = "Common") -> str:
@@ -117,7 +118,8 @@ def resolve_member(raw: str, server_virtuals: dict[tuple[str, str], str]) -> tup
     return ("", "", "AMBIGUOUS" if len(matches) > 1 else "UNRESOLVED")
 
 
-def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 48) -> Audit:
+def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 48,
+            ltm_scan=None, ltm_coverage_complete: bool = False) -> Audit:
     a = Audit()
     datasets, results = snap.datasets, snap.meta.get("endpoint_results", {})
     core_keys = [f"gtm_{kind}_{rr}" for rr in RECORD_TYPES for kind in ("wideip", "pool")]
@@ -336,5 +338,6 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
         add_manual(a, "GLOBAL", "DYNAMIC REFERENCES",
                    "iRules/distributed apps present or not collected; direct object references may be incomplete")
     from .cleanup import enrich_cleanup
-    enrich_cleanup(a, snap, ltm_snapshots, max_snapshot_gap_hours)
+    enrich_cleanup(a, snap, ltm_snapshots, max_snapshot_gap_hours,
+                   ltm_scan=ltm_scan, ltm_coverage_complete=ltm_coverage_complete)
     return a
