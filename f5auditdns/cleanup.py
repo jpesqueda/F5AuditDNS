@@ -113,6 +113,10 @@ def status_is_down(value: str) -> bool:
     return str(value).strip().upper() in {"OFFLINE", "DOWN", "UNAVAILABLE", "RED", "FALSE"}
 
 
+def status_needs_review(value: str) -> bool:
+    return str(value).strip().upper() == "DISABLED" or status_is_down(value)
+
+
 def _pool_member_datasets_complete(snap: Snapshot) -> bool:
     for rr in RECORD_TYPES:
         for p in snap.datasets.get(f"gtm_pool_{rr}", []):
@@ -332,11 +336,11 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
         notes = (base + f"; LTM search={evidence['mode']}; result={comp}; "
                  f"snapshots_checked={evidence['checked']}")
         if comp == "NOT_COMPARED":
-            verdict = "MANUAL REVIEW" if not dns_virtual or status_is_down(row["Health"]) else "IN USE"
+            verdict = "MANUAL REVIEW" if not dns_virtual or status_needs_review(row["Health"]) else "IN USE"
             notes += "; no LTM inventories given: use --ltm-raw-dir DIR"
         elif comp in ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME"):
             ltm_offline = any(status_is_down(v) for v in row["LTM Health"].split("; "))
-            verdict = "IN USE" if evidence["fresh"] and not ltm_offline and not status_is_down(row["Health"]) else "MANUAL REVIEW"
+            verdict = "IN USE" if evidence["fresh"] and not ltm_offline and not status_needs_review(row["Health"]) else "MANUAL REVIEW"
             notes += f"; found at {evidence['location']}; validate if stale/health differs"
             if ltm_offline:
                 notes += "; offline on a matching LTM snapshot does not mean removed"
@@ -415,6 +419,8 @@ def enrich_cleanup(audit: Audit, snap: Snapshot,
             setup(row, "MANUAL REVIEW", f"GSLB vs LTM name/destination evidence: {comparison}; validate dependencies")
         elif comparison == "PRESENT" and any(status_is_down(v) for v in row["LTM Health"].split("; ")):
             setup(row, "MANUAL REVIEW", "Virtual Server still exists on LTM but was offline when collected; verify, do not treat as deleted")
+        elif status_needs_review(row["Health"]):
+            setup(row, "MANUAL REVIEW", "GSLB Virtual Server is down or disabled; verify LTM and dependencies")
         elif comparison == "PRESENT" and not evidence["fresh"]:
             setup(row, "MANUAL REVIEW", "LTM Virtual Server found but its snapshot is too old or timestamp unknown")
         elif refs:
