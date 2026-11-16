@@ -28,6 +28,29 @@ SHEETS = [
 ]
 
 
+STATUS_COLORS = {
+    "AVAILABLE": ("DCFCE7", "166534"), "OFFLINE": ("FEE2E2", "991B1B"),
+    "UNAVAILABLE": ("FEF3C7", "92400E"), "DISABLED": ("E2E8F0", "334155"),
+    "UNKNOWN": ("DBEAFE", "1E40AF"), "NOT OBSERVED": ("F1F5F9", "475569"),
+}
+
+IDENTITY_COLUMNS = {
+    "pools": ("Type", "Pool"), "members": ("Type", "Pool", "Member", "GSLB Server", "Virtual Server"),
+    "virtuals": ("Server", "Virtual Server"), "candidates": ("Type", "Object", "GSLB Pool", "GSLB Server"),
+}
+PRIORITY_COLUMNS = ("Destination", "Destination IP", "Port", "Route Domain", "Service",
+                    "Health", "Config", "LTM Comparison", "LTM Location", "LTM Matched Virtual Server",
+                    "LTM Health", "Verdict", "Referenced by", "Member count", "Status Reason", "Health Source")
+
+
+def _columns(rows, attribute):
+    ordered = dict.fromkeys(k for row in rows for k in row)
+    if attribute in IDENTITY_COLUMNS:
+        priority = (*IDENTITY_COLUMNS[attribute], *PRIORITY_COLUMNS)
+        return [k for k in priority if k in ordered] + [k for k in ordered if k not in priority]
+    return list(ordered)
+
+
 def _safe_cell(value: Any) -> Any:
     """Prevent spreadsheet-formula injection from BIG-IP object names/descriptions."""
     if value is None:
@@ -51,7 +74,7 @@ def as_csv(audit: Audit, directory: str | Path) -> list[str]:
         if not rows:
             continue
         dest = folder / (re.sub(r"[^a-zA-Z0-9_-]", "_", title) + ".csv")
-        columns = list(dict.fromkeys(k for r in rows for k in r))
+        columns = _columns(rows, name)
         with dest.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()
@@ -76,7 +99,7 @@ def as_excel(audit: Audit, filename: str | Path) -> str:
             ws.append(["No records in this section"])
             ws.column_dimensions["A"].width = 36
             continue
-        keys = list(dict.fromkeys(k for r in rows for k in r))
+        keys = _columns(rows, attribute)
         ws.append(keys)
         ws.freeze_panes = "A2"
         for c in ws[1]:
@@ -90,11 +113,16 @@ def as_excel(audit: Audit, filename: str | Path) -> str:
                 for cell in ws[index]:
                     cell.fill = PatternFill("solid", fgColor="F1F5F9")
             for cell in ws[index]:
+                if keys[cell.column - 1] in ("Health", "LTM Health", "Availability"):
+                    colors = STATUS_COLORS.get(cell.value)
+                    if colors:
+                        cell.fill = PatternFill("solid", fgColor=colors[0])
+                        cell.font = Font(color=colors[1], bold=True)
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
         for col, k in enumerate(keys, 1):
             max_data = max([len(str(k))] + [len(str(r.get(k, ""))) for r in rows[:250]])
             width = min(52, max(14, max_data + 2))
-            if k in ("Reason", "Note", "Notes", "Description", "Delete", "Rollback"):
+            if k in ("Reason", "Status Reason", "LTM Evidence", "Note", "Notes", "Description", "Delete", "Rollback"):
                 width = 52
             ws.column_dimensions[get_column_letter(col)].width = width
         ws.auto_filter.ref = ws.dimensions

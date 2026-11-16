@@ -1,12 +1,23 @@
 # F5AuditDNS — Auditoría de F5 BIG-IP DNS / GSLB
 
-**Versión:** 0.3.0 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
+**Versión:** 0.4.0 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
 **Plataformas:** Windows / Linux / macOS, Python 3.9+  
 **Proyecto independiente:** no modifica, instala ni importa `f5audit` (LTM).
 
 F5AuditDNS reutiliza la filosofía de F5Audit LTM: **READ ONLY → RAW JSON → CORRELACIÓN → REPORTE**.
 
 > **Advertencia de producción:** esta versión identifica candidatos a cleanup y propone comandos `tmsh` **como texto**, sin ejecutarlos. Un veredicto no autoriza la eliminación: confirma siempre estados actuales, asociaciones DNS, aplicaciones de DR y un backup fiel de la configuración antes del cambio.
+
+## Qué cambia en 0.4.0
+
+- El Excel conserva **Destination** y separa **Destination IP**, **Port**, **Route Domain**, **Service** y el resultado del parseo. El puerto numérico se extrae aunque la respuesta no incluya un campo separado. Si el servicio no se puede resolver con certeza se conserva su nombre y se deja el puerto vacío. Un puerto 0 es comodín.
+- **Config**, **Availability**, **Operational State** y **Health** no son lo mismo. Health resume el estado operativo y da prioridad al estado deshabilitado. **UNKNOWN** es un valor reportado por el equipo. **NOT OBSERVED** significa que no hay un estado aplicable en el snapshot. **Health Source** y **Collection Health** distinguen los datos de `/stats`, configuración antigua con estado embebido, permisos, endpoints no soportados y falta de métricas para un objeto.
+- **GSLB Pool Findings** muestra conteos de miembros por estado y los contadores DNS que reporte la API (preferido, alterno, fallback, descartes y retorno). Una celda de contador vacía no equivale a cero. Los contadores son acumulados, no una tasa ni prueba de uso reciente.
+- **Pool Members** y **GSLB Virtual Servers** cruzan IP, puerto y route domain con F5Audit LTM. **ADDRESS_PRESENT_DIFFERENT_NAME** es un endpoint que sigue presente bajo otro nombre. **IP_PRESENT_DIFFERENT_PORT** no es una coincidencia del servicio. No se usan coincidencias parciales, ambiguas o sin puerto válido para inferir remoción.
+- **LTM Health** se obtiene de `ltm_virtual_stats.json` en el RAW de F5Audit, cuando existe. Se muestra el nombre LTM encontrado, el destino, el rol de failover y la evidencia por equipo. Si hay una coincidencia activa única se prefieren sus contadores; no se suman activos y standby. Un virtual server offline que aún está en el LTM queda para revisión. El Excel de F5Audit no se importa como fuente de veredictos.
+- Se puede analizar un RAW DNS anterior para obtener las nuevas columnas y el cruce. Para estados GSLB operativos hay que volver a ejecutar `collect` en una carpeta nueva. Si solo se requiere configuración, usar `collect --no-stats`.
+
+El código y los ejemplos no incluyen datos de producción. Durante una auditoría real, el RAW y Excel contienen inventario local (incluye nombres y direcciones necesarios para la correlación). Guárdalos fuera del repositorio. No copies capturas, archivos RAW reales, reportes reales ni credenciales a issues, commits o releases.
 
 ## 1. ¿Qué audita?
 

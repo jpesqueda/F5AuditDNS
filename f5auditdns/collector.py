@@ -12,11 +12,12 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
 from .client import F5APIError, F5ClientError, F5ReadOnlyClient
 from . import __version__
+from .operational import stats_rows
 
 log = logging.getLogger("f5auditdns.collector")
 RECORD_TYPES = ("a", "aaaa", "cname", "mx", "naptr", "srv")
@@ -63,13 +64,32 @@ def safe_api_path(link: str) -> str | None:
 
 def inline_items(obj: dict[str, Any], name: str) -> list[dict[str, Any]] | None:
     """Read an embedded array or expanded REST subcollection; None means unknown."""
-    direct = obj.get(name)
+    api_name = "virtual-servers" if name == "virtualServers" else name
+    direct = obj.get(name, obj.get(api_name))
     if isinstance(direct, list):
         return [x if isinstance(x, dict) else {"name": str(x)} for x in direct]
-    ref = obj.get(name + "Reference")
+    ref = obj.get(name + "Reference", obj.get(api_name + "Reference"))
     if isinstance(ref, dict) and isinstance(ref.get("items"), list):
         return [x if isinstance(x, dict) else {"name": str(x)} for x in ref["items"]]
     return None
+
+
+def _for_disk(value: Any, dataset: str) -> Any:
+    """Drop credential fields and opaque content not required for DNS audits."""
+    if isinstance(value, list):
+        return [_for_disk(item, dataset) for item in value]
+    if not isinstance(value, dict):
+        return value
+    out = {}
+    for key, item in value.items():
+        name = re.sub("[^a-z0-9]", "", str(key).lower())
+        if (any(word in name for word in ("password", "passphrase", "credential", "privatekey",
+                                           "authtoken", "authkey", "apikey", "secret"))
+                or name in {"authorization", "cookie", "setcookie", "token", "community", "username", "send", "sendstring"}
+                or (dataset == "gtm_rule" and name in {"apianonymous", "definition", "script", "rule"})):
+            continue
+        out[key] = _for_disk(item, dataset)
+    return out
 
 
 class SnapshotError(Exception):
@@ -93,7 +113,7 @@ class Snapshot:
         for n, (key, data) in enumerate(sorted(self.datasets.items())):
             name = re.sub(r"[^a-zA-Z0-9._-]", "_", key)
             (path / f"{n:04d}_{name}.json").write_text(
-                json.dumps({"collection_id": self.meta.get("collection_id"), "key": key, "data": data}, indent=2),
+                json.dumps({"collection_id": self.meta.get("collection_id"), "key": key, "data": _for_disk(data, key)}, indent=2),
                 encoding="utf-8",
             )
 
@@ -131,16 +151,18 @@ class Snapshot:
 class Collector:
     """Read GSLB configuration and relevant subcollections from a BIG-IP."""
 
-    def __init__(self, client: F5ReadOnlyClient, host: str, scope: str = "all"):
+    def __init__(self, client: F5ReadOnlyClient, host: str, scope: str = "all", *, collect_stats: bool = True):
         if scope not in ("core", "all"):
             raise ValueError("scope must be core or all")
         self.client, self.scope = client, scope
+        self.collect_stats = collect_stats
         self._details_cache: dict[str, dict[str, Any] | None] = {}
         self.snapshot = Snapshot({
             "tool": "f5auditdns", "schema_version": 1, "tool_version": __version__,
             "collection_id": str(uuid4()), "host": host, "collected_at": now(),
             "scope": scope, "endpoint_results": {}, "endpoint_paths": {},
-            "warnings": [],
+            "warnings": [], "stats_collected_at": {},
+            "operational_stats": "ENABLED" if collect_stats else "SKIPPED",
         })
 
     def _get(self, key: str, path: str, *, collection: bool = True, optional: bool = False,
@@ -166,7 +188,8 @@ class Collector:
         embedded = inline_items(parent, field)
         # Collection items often omit subcollections. Load the expanded detail
         # once before treating an absent relationship as unknown.
-        ref = parent.get(field + "Reference")
+        api_field = "virtual-servers" if field == "virtualServers" else field
+        ref = parent.get(field + "Reference", parent.get(api_field + "Reference"))
         if embedded is None and not (isinstance(ref, dict) and ref.get("link")):
             detail_path = safe_api_path(str(parent.get("selfLink") or ""))
             if detail_path:
@@ -178,7 +201,7 @@ class Collector:
                 detail = self._details_cache[detail_path]
                 if detail:
                     embedded = inline_items(detail, field)
-                    ref = detail.get(field + "Reference")
+                    ref = detail.get(field + "Reference", detail.get(api_field + "Reference"))
         if embedded is not None:
             self.snapshot.datasets[key] = embedded
             self.snapshot.meta["endpoint_results"][key] = "OK"
@@ -193,6 +216,65 @@ class Collector:
         self.snapshot.meta["endpoint_results"][key] = "UNKNOWN"
         self.snapshot.meta["endpoint_paths"][key] = "not advertised by API"
         self.snapshot.meta["warnings"].append(f"{key}: subcollection not present; treated as UNKNOWN")
+
+    def _stats(self, key: str, path: str) -> str:
+        """Stats errors never turn a working configuration inventory into a failed collect."""
+        meta = self.snapshot.meta
+        try:
+            payload = self.client.get(path)
+            if not isinstance(payload, dict) or not any(k in payload for k in ("entries", "nestedStats", "items")):
+                state = "UNRECOGNIZED STATS"
+            else:
+                rows = stats_rows(payload)
+                self.snapshot.datasets[key] = rows
+                state = "OK"
+        except F5APIError as exc:
+            state = f"HTTP_{exc.status_code}"
+        except F5ClientError:
+            state = "REQUEST FAILED"
+        meta["endpoint_results"][key] = state
+        meta["endpoint_paths"][key] = path
+        meta["stats_collected_at"][key] = now()
+        if state != "OK":
+            log.info("Operational stats unavailable for %s: %s", key, state)
+        return state
+
+    @staticmethod
+    def _resource_path(base: str, obj: dict[str, Any]) -> str:
+        link = safe_api_path(str(obj.get("selfLink") or ""))
+        if link and link.startswith(base + "/") and "/" not in link[len(base) + 1:].rstrip("/"):
+            return link.rstrip("/")
+        encoded = "~" + "~".join(quote(part, safe=":") for part in object_id(obj).strip("/").split("/"))
+        return base + "/" + encoded
+
+    def _collect_operational(self) -> None:
+        data = self.snapshot.datasets
+        for family in ("datacenter", "server"):
+            if data.get("gtm_" + family):
+                self._stats("stats_" + family, f"/mgmt/tm/gtm/{family}/stats")
+        for rr in RECORD_TYPES:
+            for family in ("wideip", "pool"):
+                objects = data.get(f"gtm_{family}_{rr}", [])
+                if not objects:
+                    continue
+                base = f"/mgmt/tm/gtm/{family}/{rr}"
+                state = self._stats(f"stats_{family}_{rr}", base + "/stats")
+                # Older TMOS can support an individual pool stats resource even
+                # when the typed collection does not provide statistics.
+                if family == "pool" and (state in ("HTTP_400", "HTTP_404", "HTTP_405", "HTTP_501", "UNRECOGNIZED STATS")
+                                         or (state == "OK" and not data.get(f"stats_pool_{rr}"))):
+                    for obj in objects:
+                        self._stats(f"stats_pool_{rr}::{object_id(obj)}", self._resource_path(base, obj) + "/stats")
+            for pool in data.get(f"gtm_pool_{rr}", []):
+                pid = object_id(pool)
+                if data.get(f"pool_members::{rr}::{pid}"):
+                    base = self._resource_path(f"/mgmt/tm/gtm/pool/{rr}", pool)
+                    self._stats(f"stats_pool_members::{rr}::{pid}", base + "/members/stats")
+        for server in data.get("gtm_server", []):
+            sid = object_id(server)
+            if data.get(f"server_virtuals::{sid}"):
+                base = self._resource_path("/mgmt/tm/gtm/server", server)
+                self._stats(f"stats_server_virtuals::{sid}", base + "/virtual-servers/stats")
 
     def collect(self) -> Snapshot:
         # If the management connection fails during a long collection, retain
@@ -219,19 +301,21 @@ class Collector:
                     self._get(key, path, optional=True)
                 for mon in MONITOR_TYPES:
                     self._get(f"gtm_monitor_{mon}", f"/mgmt/tm/gtm/monitor/{mon}", optional=True)
+            if self.collect_stats:
+                self._collect_operational()
         except F5ClientError as exc:
-            self.snapshot.meta["aborted"] = str(exc)
+            self.snapshot.meta["aborted"] = type(exc).__name__
             self.snapshot.meta["warnings"].append(
                 "Collection was interrupted; already collected datasets were retained"
             )
-            log.error("Collection interrupted; partial snapshot will be retained: %s", exc)
+            log.error("Collection interrupted; partial snapshot will be retained: %s", type(exc).__name__)
         finally:
             self.snapshot.meta["finished_at"] = now()
             self.snapshot.meta["success_count"] = sum(
                 v == "OK" for v in self.snapshot.meta["endpoint_results"].values()
             )
             self.snapshot.meta["warning_count"] = (
-                sum(v != "OK" for v in self.snapshot.meta["endpoint_results"].values())
+                sum(v != "OK" for k, v in self.snapshot.meta["endpoint_results"].items() if not k.startswith("stats_"))
                 + int(bool(self.snapshot.meta.get("aborted")))
             )
         return self.snapshot
