@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .collector import Snapshot, RECORD_TYPES, object_id
+from .destination import parse_destination
+from .operational import StatsIndex, operational_columns, MISSING
 
 
 @dataclass
@@ -62,18 +64,18 @@ def config_state(obj: dict[str, Any]) -> str:
     """Configuration enable/disable is not the same as service health UP/DOWN."""
     disabled = obj.get("disabled")
     enabled = obj.get("enabled")
-    if disabled is True or str(disabled).lower() in ("true", "yes"):
+    if disabled is True or str(disabled).lower() in ("true", "yes", "disabled"):
         return "DISABLED"
     if enabled is False or str(enabled).lower() in ("false", "no"):
         return "DISABLED"
-    return "ENABLED" if enabled is True or str(enabled).lower() in ("true", "yes") else "UNKNOWN"
+    return "ENABLED" if enabled is True or str(enabled).lower() in ("true", "yes", "enabled") else "UNKNOWN"
 
 
 def health_state(obj: dict[str, Any]) -> str:
     """Read only actual health fields; never infer health from 'enabled'."""
     status = obj.get("status")
     if isinstance(status, dict):
-        for key in ("availabilityState", "status", "state"):
+        for key in ("availabilityState", "availability"):
             if status.get(key):
                 return str(status[key]).upper()
     for key in ("availabilityState", "availability", "statusAvailability"):
@@ -121,6 +123,19 @@ def resolve_member(raw: str, server_virtuals: dict[tuple[str, str], str]) -> tup
 def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 48,
             ltm_scan=None, ltm_coverage_complete: bool = False) -> Audit:
     a = Audit()
+    stats = StatsIndex(snap)
+
+    def health(keys, name, obj, rr="", aliases=()):
+        config = config_state(obj)
+        cols = stats.columns(keys, name, config, rr, aliases)
+        inline = health_state(obj)
+        if cols["Health Source"] != "REST /stats" and inline != "UNKNOWN":
+            # Compatibility with older snapshots that carry an inline status.
+            fallback = operational_columns({"status.availabilityState": inline}, "INLINE LEGACY", config)
+            fallback["Health Source"] = "INLINE LEGACY (" + cols["Health Source"] + ")"
+            return fallback
+        return cols
+
     datasets, results = snap.datasets, snap.meta.get("endpoint_results", {})
     core_keys = [f"gtm_{kind}_{rr}" for rr in RECORD_TYPES for kind in ("wideip", "pool")]
     core_keys += ["gtm_datacenter", "gtm_server"]
@@ -131,10 +146,18 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
     )
 
     for key, state in sorted(results.items()):
+        is_stats = key.startswith("stats_")
         a.collection_health.append({"Dataset": key, "Status": state,
-                                    "Endpoint": snap.meta.get("endpoint_paths", {}).get(key, "")})
-        if state != "OK":
+                                    "Endpoint": snap.meta.get("endpoint_paths", {}).get(key, ""),
+                                    "Category": "OPERATIONAL" if is_stats else "CONFIG",
+                                    "Collected UTC": snap.meta.get("stats_collected_at", {}).get(key, "")})
+        if state != "OK" and not is_stats:
             add_manual(a, "COLLECTION", key, f"Dataset incomplete: {state}", "DATA GAP")
+
+    if not any(key.startswith("stats_") for key in results):
+        a.collection_health.append({"Dataset": "Operational statistics", "Status": "SKIPPED" if
+                                    snap.meta.get("operational_stats") == "SKIPPED" else MISSING,
+                                    "Endpoint": "", "Category": "OPERATIONAL", "Collected UTC": ""})
 
     pools_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     wideip_pools: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
@@ -185,7 +208,7 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
                 reverse_pool_refs[key].add(f"{rr.upper()} {wid}")
             a.wideips.append({
                 "Type": rr.upper(), "Wide IP": wid, "Config": config_state(obj),
-                "Health": health_state(obj), "Pools": ", ".join(f"{t.upper()}:{n}" for t, n in refs),
+                **health((f"stats_wideip_{rr}",), wid, obj, rr), "Pools": ", ".join(f"{t.upper()}:{n}" for t, n in refs),
                 "Pool count": len(refs), "Last resort": last_resort,
                 "Rules": ", ".join(names_of(obj.get("rules"))),
                 "Finding": "REVIEW: pool links unavailable" if pool_rows is None else
@@ -209,6 +232,7 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
     servers: dict[str, dict[str, Any]] = {object_id(s): s for s in datasets.get("gtm_server", [])}
     datacenters: dict[str, dict[str, Any]] = {object_id(d): d for d in datasets.get("gtm_datacenter", [])}
     server_virtuals: dict[tuple[str, str], str] = {}
+    virtual_objects: dict[tuple[str, str], dict[str, Any]] = {}
     virtuals_per_server: dict[str, int | None] = {}
     for server, obj in servers.items():
         vlist = datasets.get(f"server_virtuals::{server}")
@@ -218,11 +242,14 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
             continue
         for v in vlist:
             vname = object_id(v)
-            server_virtuals[(server, vname)] = str(v.get("destination") or v.get("address") or "")
-            a.virtuals.append({"Server": server, "Virtual Server": vname,
-                               "Destination": str(v.get("destination") or v.get("address") or ""),
-                               "Port": v.get("port", ""), "Config": config_state(v),
-                               "Health": health_state(v)})
+            dest = str(v.get("destination") or v.get("address") or "")
+            server_virtuals[(server, vname)] = dest
+            virtual_objects[(server, vname)] = v
+            a.virtuals.append({"Server": server, "Virtual Server": vname, "Destination": dest,
+                               **parse_destination(dest, v.get("port")).columns(),
+                               "Config": config_state(v), "Monitor": str(v.get("monitor") or ""),
+                               **health((f"stats_server_virtuals::{server}",), vname, v,
+                                        aliases=(server + ":" + vname,))})
 
     pool_member_counts: dict[tuple[str, str], int | None] = {}
     referenced_servers: set[str] = set()
@@ -239,11 +266,17 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
                 add_manual(a, "POOL MEMBER", raw or path, f"Server/Virtual mapping: {resolution}", "DATA GAP")
             else:
                 referenced_servers.add(server)
+            dest = server_virtuals.get((server, virtual), "")
+            vs = virtual_objects.get((server, virtual), {})
+            dest = dest or str(member.get("destination") or member.get("address") or "")
+            port = vs.get("port") if vs.get("port") not in (None, "") else (
+                member.get("port") if not vs else None)
+            aliases = (server + ":" + virtual,) if server and virtual else ()
             a.members.append({"Type": rr.upper(), "Pool": path, "Member": raw,
-                              "GSLB Server": server, "Virtual Server": virtual,
-                              "Destination": server_virtuals.get((server, virtual), ""),
+                              "GSLB Server": server, "Virtual Server": virtual, "Destination": dest,
+                              **parse_destination(dest, port).columns(),
                               "Mapping": resolution, "Config": config_state(member),
-                              "Health": health_state(member)})
+                              **health((f"stats_pool_members::{rr}::{path}",), raw, member, aliases=aliases)})
         refs = sorted(reverse_pool_refs[(rr, path)])
         if members is None:
             finding = "MANUAL REVIEW: members unknown"
@@ -260,7 +293,8 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
         elif not members:
             add_manual(a, "POOL", path, "Pool has zero members; check fallback/maintenance design")
         a.pools.append({"Type": rr.upper(), "Pool": path, "Config": config_state(p),
-                        "Health": health_state(p), "Member count": pool_member_counts[(rr, path)],
+                        **health((f"stats_pool_{rr}", f"stats_pool_{rr}::{path}"), path, p, rr),
+                        "Member count": pool_member_counts[(rr, path)],
                         "Referenced by": ", ".join(refs), "Monitor": str(p.get("monitor") or ""),
                         "Method": str(p.get("loadBalancingMode") or ""), "Finding": finding})
 
@@ -273,7 +307,7 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
         finding = "REFERENCED" if sid in referenced_servers else "MANUAL REVIEW: no mapped member"
         a.servers.append({"Server": sid, "Data Center": dc, "Product": s.get("product", ""),
                           "Virtual Server count": count, "Config": config_state(s),
-                          "Health": health_state(s), "Referenced by member": sid in referenced_servers,
+                          **health(("stats_server",), sid, s), "Referenced by member": sid in referenced_servers,
                           "Finding": finding})
         if count == 0:
             add_manual(a, "SERVER", sid, "No GSLB Virtual Servers; validate discovery and intended role")
@@ -285,7 +319,7 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
         associated = server_to_dc.get(dcid, [])
         a.datacenters.append({"Data Center": dcid, "Server count": len(associated),
                               "Servers": ", ".join(associated), "Config": config_state(dc),
-                              "Health": health_state(dc),
+                              **health(("stats_datacenter",), dcid, dc),
                               "Finding": "MANUAL REVIEW: no servers" if not associated else "REFERENCED"})
         if not associated:
             add_manual(a, "DATA CENTER", dcid, "No GSLB Server references; may still have topology/prober role")
@@ -308,7 +342,9 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
                 a.chains.append({"Type": w["Type"], "Wide IP": w["Wide IP"],
                                  "Pool": pname, "Member": m["Member"],
                                  "Server": m["GSLB Server"], "Virtual Server": m["Virtual Server"],
-                                 "Destination": m["Destination"], "Note": m["Mapping"]})
+                                 "Destination": m["Destination"], "Destination IP": m["Destination IP"],
+                                 "Port": m["Port"], "Route Domain": m["Route Domain"],
+                                 "Note": m["Mapping"]})
 
     for key, values in sorted(datasets.items()):
         if key.startswith(("gtm_monitor_", "gtm_listener", "gtm_rule", "gtm_topology",
@@ -332,6 +368,11 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
         {"Metric": "Can independently establish lack of use", "Value": "NO - requires historical and operational validation"},
         {"Metric": "Deletion actions", "Value": "NEVER GENERATED"},
     ]
+    for label, group in (("Pools", a.pools), ("Members", a.members), ("Virtual servers", a.virtuals)):
+        for state in ("AVAILABLE", "UNAVAILABLE", "OFFLINE", "DISABLED", "UNKNOWN", "NOT OBSERVED"):
+            a.summary.append({"Metric": f"{label}: {state}", "Value": sum(row["Health"] == state for row in group)})
+    a.summary.append({"Metric": "Operational stats requests without usable response",
+                      "Value": sum(k.startswith("stats_") and v != "OK" for k, v in results.items())})
     if missing_core:
         add_manual(a, "GLOBAL", "COLLECTION", "Core inventory incomplete; no unused classification is safe", "DATA GAP")
     if any_dynamic or dynamic_coverage_unknown:

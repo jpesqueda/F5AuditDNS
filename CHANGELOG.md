@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0] — 2026-11-16
+
+- Collect read-only REST operational stats separately from configuration. Show availability, administrative state, reason, source, collection time, and reported DNS counters. Unsupported stats are explicit and do not masquerade as failed configuration.
+- Add independent destination IP, numeric port, route domain and service columns. Match LTM by address, port and route domain, with different names, ports, and ambiguous matches reported separately.
+- Read F5Audit LTM RAW virtual stats and failover role when available. Offline but still present on LTM is manual review, not removal. Keep standby counters separate.
+- Add pool member state counts and color-coded Excel states. Existing snapshots still analyze offline; a fresh DNS collection is needed for new REST stats.
+
 ## [0.3.0] — 2026-11-12
 
 - Analyze exactly one BIG-IP DNS at a time; DNS peer and Sync Group audits are out of scope.

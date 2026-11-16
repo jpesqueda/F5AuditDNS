@@ -163,6 +163,7 @@ and the final output prints an analyze command you can copy and paste.
         if name == "collect":
             sub.add_argument("-o", "--save-raw", default=None,
                              help="Snapshot directory (default: ./f5auditDNS_raw_HOSTNAME_YYYYMMDD_HHMM)")
+            sub.add_argument("--no-stats", action="store_true", help="Collect configuration only; skip operational REST statistics")
             sub.add_argument("--scope", choices=("core", "all"), default="all",
                              help="core: GSLB objects only; all: also monitors, iRules, topology, listeners")
         if name == "analyze":
@@ -231,13 +232,19 @@ def main(argv: list[str] | None = None) -> int:
                 if not discovered:
                     print("WARNING: BIG-IP hostname unavailable; using -ho value for folder name.")
                 path = auto_snapshot_directory(hostname, started_at)
-            snapshot = Collector(client, args.host, args.scope).collect()
+            snapshot = Collector(client, args.host, args.scope, collect_stats=not args.no_stats).collect()
             if hostname is not None:
                 snapshot.meta["device_hostname"] = hostname
             snapshot.write(path)
             ok = snapshot.meta.get("success_count", 0)
             bad = snapshot.meta.get("warning_count", 0)
             print(f"Raw snapshot saved: {shell_path(path)} | OK datasets: {ok} | warnings: {bad}")
+            if args.no_stats:
+                print("Operational stats: skipped (--no-stats).")
+            else:
+                requests = [v for k, v in snapshot.meta["endpoint_results"].items() if k.startswith("stats_")]
+                print(f"Operational stats: {requests.count('OK')}/{len(requests)} endpoints returned a stats response. "
+                      "See Collection Health and Health Source in the report.")
             print("The audit is read-only; no configuration was modified.")
             print("\nNext step: analyze this snapshot (run in the SAME directory):")
             print(f'  f5auditdns analyze --from-raw "{shell_path(path)}" -o ".{os.sep}DNS_Audit.xlsx"')

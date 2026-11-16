@@ -7,9 +7,15 @@ same physical device, and never interpret an incomplete dataset as absence.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any
+
+from .destination import parse_destination
+from .operational import stats_rows, operational_columns
 
 
 class LtmSnapshotError(ValueError):
@@ -37,6 +43,11 @@ def endpoint(value: Any) -> str:
 class LtmVirtual:
     full_path: str
     destination: str
+    port: Any = None
+
+    @cached_property
+    def parsed(self):
+        return parse_destination(self.destination, self.port)
 
 
 @dataclass
@@ -46,6 +57,8 @@ class LtmInventory:
     directory: str
     virtuals: list[LtmVirtual]
     partitions: set[str]
+    role: str = "UNKNOWN"
+    stats: dict[str, dict] = field(default_factory=dict)
 
     @classmethod
     def load(cls, directory: str | Path) -> "LtmInventory":
@@ -81,7 +94,7 @@ class LtmInventory:
                 if not isinstance(row, dict):
                     raise LtmSnapshotError(f"Invalid LTM virtual record in {file.name}")
                 full_path = canonical(row.get("fullPath") or row.get("name"), str(row.get("partition") or partition))
-                virtuals.append(LtmVirtual(full_path, endpoint(row.get("destination"))))
+                virtuals.append(LtmVirtual(full_path, endpoint(row.get("destination")), row.get("port")))
         if not partitions:
             raise LtmSnapshotError(f"No LTM virtual datasets in {folder}; cannot prove absence")
         # A successful, complete auth/partition collection is required to make
@@ -96,22 +109,74 @@ class LtmInventory:
             raise LtmSnapshotError("Invalid LTM partition inventory") from exc
         if not required or not required.issubset(partitions):
             raise LtmSnapshotError("LTM snapshot does not cover every authorized partition")
-        return cls(str(meta.get("host") or ""), str(meta["collected_at"]), str(folder), virtuals, partitions)
+        def optional_data(filename):
+            try:
+                return json.loads((folder / filename).read_text(encoding="utf-8")).get("data")
+            except (ValueError, AttributeError, OSError):
+                return None
 
-    def compare(self, virtual_path: str, destination: str, ltm_name: str = "") -> str:
-        """Return exact matching evidence, not a verdict on whether to delete."""
+        failover = optional_data("sys_failover.json")
+        raw_role = failover.get("apiRawValues", {}) if isinstance(failover, dict) else {}
+        role_match = re.search(r"\bFailover\s+(active|standby)\b",
+                               str(raw_role.get("apiAnonymous", "")) if isinstance(raw_role, dict) else "", re.I)
+        role = role_match[1].upper() if role_match else "UNKNOWN"
+        by_name = defaultdict(list)
+        for row in stats_rows(optional_data("ltm_virtual_stats.json")):
+            name = row.get("tmName")
+            if isinstance(name, str) and name.startswith("/"):
+                by_name[name].append(row)
+        stats = {name: rows[0] for name, rows in by_name.items() if len(rows) == 1}
+        return cls(str(meta.get("host") or ""), str(meta["collected_at"]), str(folder),
+                   virtuals, partitions, role, stats)
+
+    @cached_property
+    def indexes(self):
+        by_name, by_endpoint, by_scope, by_address = (defaultdict(list) for _ in range(4))
+        for obj in self.virtuals:
+            by_name[obj.full_path].append(obj)
+            parsed = obj.parsed
+            if parsed.key:
+                by_endpoint[parsed.key].append(obj)
+            if parsed.scope:
+                by_scope[parsed.scope].append(obj)
+                by_address[parsed.address].append(obj)
+        return by_name, by_endpoint, by_scope, by_address
+
+    def match(self, virtual_path: str, destination: str, ltm_name: str = "", port: Any = None):
+        """Return evidence with matching LTM objects, never a deletion verdict."""
+        by_name, by_endpoint, by_scope, by_address = self.indexes
         target = canonical(ltm_name or virtual_path) if (ltm_name or virtual_path) else ""
-        target_destination = endpoint(destination)
-        exact_name = [v for v in self.virtuals if v.full_path == target]
-        if exact_name:
-            if not target_destination or any(v.destination == target_destination for v in exact_name):
-                return "PRESENT"
-            return "NAME_PRESENT_ADDRESS_DIFFERS"
-        if target_destination and any(v.destination == target_destination for v in self.virtuals):
-            return "ADDRESS_PRESENT_DIFFERENT_NAME"
-        if not target or not target_destination:
-            return "UNVERIFIABLE"
-        return "NOT_FOUND"
+        dst = parse_destination(destination, port)
+        named = by_name.get(target, [])
+        exact = by_endpoint.get(dst.key, []) if dst.key else []
+        if len({v.full_path for v in exact}) > 1:
+            return "AMBIGUOUS_ENDPOINT", exact
+        if exact:
+            return ("PRESENT" if any(v.full_path == target for v in exact)
+                    else "ADDRESS_PRESENT_DIFFERENT_NAME"), exact
+        if not dst.key:
+            return "UNVERIFIABLE", named
+        if named:
+            return "NAME_PRESENT_ADDRESS_DIFFERS", named
+        related = by_scope.get(dst.scope, [])
+        if related:
+            if any(not v.parsed.key for v in related):
+                return "LTM_PORT_UNVERIFIABLE", related
+            return "IP_PRESENT_DIFFERENT_PORT", related
+        if by_address.get(dst.address):
+            return "IP_PRESENT_DIFFERENT_ROUTE_DOMAIN", by_address[dst.address]
+        if not target:
+            return "UNVERIFIABLE", []
+        return "NOT_FOUND", []
+
+    def compare(self, virtual_path: str, destination: str, ltm_name: str = "", port: Any = None) -> str:
+        return self.match(virtual_path, destination, ltm_name, port)[0]
+
+    def evidence(self, records):
+        return [{"host": self.host, "role": self.role, "name": v.full_path,
+                 "endpoint": v.destination,
+                 **operational_columns(self.stats.get(v.full_path, {}), "LTM RAW")}
+                for v in records]
 
 
 def parse_ltm_mappings(args: list[str] | None) -> dict[str, LtmInventory]:
@@ -142,28 +207,22 @@ class LtmScan:
     warnings: list[str]
     directories: list[str]
 
-    def search(self, virtual_path: str, destination: str, ltm_name: str = "") -> dict[str, Any]:
-        if not self.inventories:
-            return {"comparison": "NOT_COMPARED", "location": "", "sources": "",
-                    "timestamp": "", "matched": [], "checked": 0}
-        if not destination and not (virtual_path or ltm_name):
-            return {"comparison": "UNVERIFIABLE", "location": "", "sources": "",
-                    "timestamp": "", "matched": [], "checked": len(self.inventories)}
-        rows = [(inv, inv.compare(virtual_path, destination, ltm_name)) for inv in self.inventories]
-        priority = ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME", "NAME_PRESENT_ADDRESS_DIFFERS")
-        comparison = next((p for p in priority if any(v == p for _, v in rows)), "NOT_FOUND_IN_SCANNED_LTMS")
-        # A VIP found with its correct address but under a different VS name
-        # is still present on that LTM. Include such devices alongside exact
-        # matches, e.g. a pair of HA devices with different VS names.
-        found_states = ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME") if comparison in (
-            "PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME") else (comparison,)
-        matched = [(inv, result) for inv, result in rows if result in found_states] if comparison in priority else []
+    def search(self, virtual_path: str, destination: str, ltm_name: str = "", port: Any = None) -> dict[str, Any]:
+        rows = [(inv, *inv.match(virtual_path, destination, ltm_name, port)) for inv in self.inventories]
+        present = ("PRESENT", "ADDRESS_PRESENT_DIFFERENT_NAME", "AMBIGUOUS_ENDPOINT")
+        priority = (*present, "NAME_PRESENT_ADDRESS_DIFFERS", "LTM_PORT_UNVERIFIABLE",
+                    "IP_PRESENT_DIFFERENT_PORT", "IP_PRESENT_DIFFERENT_ROUTE_DOMAIN", "UNVERIFIABLE")
+        default = "NOT_FOUND_IN_SCANNED_LTMS" if rows else "NOT_COMPARED"
+        comparison = next((p for p in priority if any(v == p for _, v, _ in rows)), default)
+        found = [inv for inv, result, records in rows if records and (
+            result in present if comparison in present else result == comparison)]
         return {
             "comparison": comparison,
-            "location": ", ".join(inv.host for inv, _ in matched),
-            "sources": "; ".join(inv.directory for inv, _ in matched),
-            "timestamp": "; ".join(f"{inv.host}: {inv.timestamp}" for inv, _ in matched),
-            "matched": matched,
+            "location": ", ".join(inv.host for inv in found),
+            "sources": "; ".join(inv.directory for inv in found),
+            "timestamp": "; ".join(f"{inv.host}: {inv.timestamp}" for inv in found),
+            "evidence": [dict(item, comparison=result) for inv, result, records in rows
+                         for item in inv.evidence(records)],
             "checked": len(rows),
         }
 

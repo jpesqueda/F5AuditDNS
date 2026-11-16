@@ -14,3 +14,8 @@ snapshots/
 f5auditDNS_raw_*/
 raw_dns/
 DNS_Audit*.xlsx
+
+# Keep production captures and local workbooks out of commits.
+/raw*/
+/ltm_raw*/
+/DNS_*.xlsx
