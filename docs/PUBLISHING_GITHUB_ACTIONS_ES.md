@@ -1,7 +1,7 @@
 # Publicación de F5AuditDNS desde GitHub Actions
 
 Esta configuración añade publicación automática sin tokens permanentes mediante **Trusted Publishing (OIDC)**.
-No modifica el código ni la versión del proyecto (0.1.2).
+La guía utiliza la versión de desarrollo 0.5.2 como ejemplo; confirma el tag exacto antes de publicar.
 
 ## Archivos
 
@@ -52,7 +52,7 @@ Se ejecutan pruebas, se construyen `sdist` y `wheel`, se revisan metadatos y se 
 
 ## 5. Publicar en PyPI
 
-GitHub → Releases → Draft a new release → Tag: `v0.1.2` → Publish release.
+GitHub → Releases → Draft a new release → Tag: `v0.5.2` → Publish release.
 
 El workflow comprueba que el tag sea exactamente `v` más la versión de `pyproject.toml`, ejecuta pruebas, construye distribuciones y, después de aprobar el entorno si corresponde, publica a PyPI.
 
@@ -70,7 +70,7 @@ f5auditdns --version
 Desde TestPyPI (para probar la distribución, con dependencias obtenidas de PyPI):
 
 ```powershell
-py -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ f5auditdns==0.1.2
+py -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ f5auditdns==0.5.2
 ```
 
 **Nota:** combinar índices puede introducir riesgos de dependencia con nombres duplicados; usa un entorno aislado y revisa las dependencias. También puedes descargar el wheel desde TestPyPI e instalarlo por ruta con dependencias verificadas.

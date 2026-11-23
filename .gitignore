@@ -15,7 +15,18 @@ f5auditDNS_raw_*/
 raw_dns/
 DNS_Audit*.xlsx
 
-# Keep production captures and local workbooks out of commits.
-/raw*/
-/ltm_raw*/
-/DNS_*.xlsx
+# Sensitive audit output must never enter the public repository.
+*_raw_*/
+*RAW*/
+*.ucs
+*.pcap
+*.key
+*.pem
+*.xlsx
+*.xls
+FreedIP_*.csv
+FreedIP_*.txt
+
+# Packaging output
+*.tar.gz
+*.whl

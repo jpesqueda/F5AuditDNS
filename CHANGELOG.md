@@ -1,11 +1,45 @@
 # Changelog
 
+## [0.5.2] — 2026-11-20 (development; not published)
+
+- A single repeatable `analyze --file FILE` (TXT/CSV/XLSX) now highlights yellow and uses valid IP/endpoint entries for unapproved FreedIP/Pool Impact simulation.
+- Object and GSLB VS names remain search-only; `--search-only` restores the previous highlight-only behavior.
+- Preserve `--freed-ip-file` for explicit additional evidence and deduplicate repeated IP/port/route-domain combinations.
+- Preserve all Verdict, Approval Status=PENDING, sheets, stats and evidence. Commands remain NOT RUN, with no device changes.
+- Fix per-member Cleanup Readiness evidence source selection and add synthetic tests + bilingual documentation.
+
+
+## [0.5.1] — 2026-11-20 (development; not published)
+
+- Add offline `analyze --virtual-server NAME` (alias `--vs`) and `--object NAME` (alias `--search`) queries with exact object-name and address-aware IP/port/route-domain matching.
+- Add repeatable `analyze --file FILE` for TXT, CSV and XLSX multi-column search; do not confuse it with the existing `--freed-ip-file` decommission evidence option.
+- Highlight matching identity/destination cells in **yellow** without filtering existing report sheets or altering `Verdict`, `Approval Status`, simulation or cleanup decisions.
+- Add optional **Search Results** worksheet/CSV with exact sheet/row/column, input source and FOUND / NOT FOUND evidence.
+- Keep the 13 original worksheets, four v0.5.0 extension sheets and optional FreedIP intact.
+- Add bilingual English/Spanish README suitable for PyPI long description, two full usage guides, engineering reference and publishing instructions in both languages, and bilingual CLI `--help`.
+- Add English and Spanish metadata classifiers and project links, plus offline synthetic search regression tests.
+- No live BIG-IP configuration operations and no PyPI publication.
+
+## [0.5.0] — 2026-11-20 (development; not published)
+
+- Preserve all 13 original workbook sheets, columns and v0.4.0 operational status/LTM matching.
+- Add **Reference Map**, **Object Inventory**, **Pool Impact**, **Cleanup Procedure**, plus optional **FreedIP**.
+- Cross-reference direct Wide IP and Last Resort relationships independently, accounting for missing and dynamic references.
+- Add multi-pool GSLB Virtual Server references, parent/server dependencies, per-object read-only prechecks and postchecks.
+- Simulate marked IP removal without changing Verdict or recording approval; every Approval Status starts PENDING.
+- Support `analyze --freed-ip-file FILE` with strict TXT/CSV/XLSX multi-column parsing, IP, port and route-domain matching.
+- Make every modification/rollback example `NOT RUN`; explicitly mark rollback as **ROLLBACK INCOMPLETE** when exact pre-change tmsh config is unavailable.
+- Retain CLI validate, collect, analyze, `--no-stats`, LTM automatic and explicit mapping, `--ltm-coverage-complete` and CSV/Excel output.
+- Reuse older RAW DNS snapshots for new graph analysis. No new live configuration endpoints are required.
+- Maintain an offline synthetic test suite; never commit production snapshots or secrets.
+
 ## [0.4.0] — 2026-11-16
 
-- Collect read-only REST operational stats separately from configuration. Show availability, administrative state, reason, source, collection time, and reported DNS counters. Unsupported stats are explicit and do not masquerade as failed configuration.
-- Add independent destination IP, numeric port, route domain and service columns. Match LTM by address, port and route domain, with different names, ports, and ambiguous matches reported separately.
-- Read F5Audit LTM RAW virtual stats and failover role when available. Offline but still present on LTM is manual review, not removal. Keep standby counters separate.
-- Add pool member state counts and color-coded Excel states. Existing snapshots still analyze offline; a fresh DNS collection is needed for new REST stats.
+- Capture read-only GSLB operational statistics via `/stats` with explicit collection-health diagnostics.
+- Split destination address into IP, port, route domain and service.
+- Improve LTM correlation by IP/port/route-domain and retain virtual-server name mismatch evidence.
+- Distinguish `UNKNOWN` from `NOT OBSERVED` and preserve LTM health and connection counters.
+
 
 ## [0.3.0] — 2026-11-12
 

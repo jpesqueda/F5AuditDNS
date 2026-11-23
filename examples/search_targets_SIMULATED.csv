@@ -1,0 +1,5 @@
+Destination IP,Virtual Server,Endpoint,Notes
+192.0.2.100,vs_app,,Documentation-only fixture
+192.0.2.200,vs_retired,,This does not approve deletion
+,,198.51.100.100:443,Exact port example
+203.0.113.254,,,Deliberate NOT FOUND sample

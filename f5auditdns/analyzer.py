@@ -30,6 +30,11 @@ class Audit:
     collection_health: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
     ltm_inventory: list[dict[str, Any]] = field(default_factory=list)
+    reference_map: list[dict[str, Any]] = field(default_factory=list)
+    object_inventory: list[dict[str, Any]] = field(default_factory=list)
+    pool_impact: list[dict[str, Any]] = field(default_factory=list)
+    cleanup_procedure: list[dict[str, Any]] = field(default_factory=list)
+    freed_ips: list[dict[str, Any]] = field(default_factory=list)
 
 
 def normalize_path(value: Any, partition: str = "Common") -> str:
@@ -121,7 +126,7 @@ def resolve_member(raw: str, server_virtuals: dict[tuple[str, str], str]) -> tup
 
 
 def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 48,
-            ltm_scan=None, ltm_coverage_complete: bool = False) -> Audit:
+            ltm_scan=None, ltm_coverage_complete: bool = False, freed_ips=None) -> Audit:
     a = Audit()
     stats = StatsIndex(snap)
 
@@ -381,4 +386,6 @@ def analyze(snap: Snapshot, ltm_snapshots=None, max_snapshot_gap_hours: float = 
     from .cleanup import enrich_cleanup
     enrich_cleanup(a, snap, ltm_snapshots, max_snapshot_gap_hours,
                    ltm_scan=ltm_scan, ltm_coverage_complete=ltm_coverage_complete)
+    from .reference_engine import build_reference_report
+    build_reference_report(a, snap, freed_ips=freed_ips)
     return a

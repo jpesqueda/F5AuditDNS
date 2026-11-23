@@ -1,0 +1,4 @@
+# Documentation-only addresses. These are review markers, not approvals.
+192.0.2.200
+198.51.100.100:443
+192.0.2.42%3:8443

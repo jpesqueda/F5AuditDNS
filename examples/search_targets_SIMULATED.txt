@@ -1,0 +1,6 @@
+# Offline search list. Every value is fictitious.
+192.0.2.100
+192.0.2.200
+vs_app
+vs_retired
+203.0.113.254

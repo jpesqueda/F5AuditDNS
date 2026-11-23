@@ -16,6 +16,8 @@ from .ltm_compare import parse_ltm_mappings, discover_ltm_snapshots, LtmSnapshot
 from .client import F5ClientError, F5ReadOnlyClient
 from .collector import Collector, Snapshot, SnapshotError, validate
 from .report import as_csv, as_excel
+from .freedip import load_freed_ips
+from .search import load_search_terms
 
 
 # Keep the default folder naming independent from the F5Audit LTM project.
@@ -96,6 +98,9 @@ Analyze the snapshot (offline):
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl"
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits -o DNS_Cleanup.xlsx
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --ltm-coverage-complete -o DNS_Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --file .\freed_ips.txt -o Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --virtual-server vs_app -o Highlighted.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --file .\freed_ips.txt -o Highlighted_And_Simulated.xlsx
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 
@@ -132,12 +137,49 @@ and the final output prints an analyze command you can copy and paste.
   f5auditdns analyze --from-raw .\raw_dns -o DNS_Audit.xlsx --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl"
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits -o DNS_Cleanup.xlsx
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --ltm-coverage-complete -o DNS_Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --file .\freed_ips.txt -o Cleanup.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --virtual-server vs_app -o Highlighted.xlsx
+  f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --file .\freed_ips.txt -o Highlighted_And_Simulated.xlsx
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
 """
+    examples += """
+
+Ejemplos (español):
+  f5auditdns collect -ho dns01.example.test -u auditor -o .\\DNS_RAW
+  f5auditdns analyze --from-raw .\\DNS_RAW --virtual-server vs_app -o VS_Resaltado.xlsx
+  f5auditdns analyze --from-raw .\\DNS_RAW --ltm-raw-dir .\\LTM_RAW --file .\\lista.xlsx -o Reporte.xlsx
+
+Importante: --file busca/resalta y, si contiene IPs, TAMBIEN simula
+su retirada en Pool Impact (Approval Status=PENDING). Nombres de VS solo buscan.
+Use --search-only si solo quiere amarillo sin simular cambios.
+--freed-ip-file agrega evidencia opcional. Nunca se ejecutan comandos tmsh.
+"""
+    validate_examples += """
+
+Ejemplos (español): comprobar acceso de lectura a API REST.
+  f5auditdns validate -ho 192.0.2.20 -u auditor
+"""
+    collect_examples += """
+
+Ejemplos (español): capturar RAW sin modificar BIG-IP.
+  f5auditdns collect -ho dns01.example.test -u auditor -o .\\DNS_RAW
+"""
+    analyze_examples += """
+
+Ejemplos (español): analizar RAW existentes sin conexión al BIG-IP.
+  f5auditdns analyze --from-raw .\\DNS_RAW --virtual-server vs_app -o VS_Resaltado.xlsx
+  f5auditdns analyze --from-raw .\\DNS_RAW --ltm-raw-dir .\\LTM_RAW --file .\\lista.xlsx -o Reporte.xlsx
+  f5auditdns analyze --from-raw .\\DNS_RAW --freed-ip-file .\\freed_ips.xlsx -o Cleanup.xlsx
+
+--file: buscar/resaltar; las IPs válidas también alimentan FreedIP y Pool Impact.
+--search-only: --file solo resalta, sin simulación FreedIP.
+--freed-ip-file: evidencia adicional para simulación, nunca autorización.
+Ninguna opción cambia Verdict ni Approval Status (PENDING).
+"""
     p = argparse.ArgumentParser(
         prog="f5auditdns",
-        description="Read-only F5 BIG-IP DNS / GSLB audit (independent of F5Audit LTM).",
+        description="Read-only F5 BIG-IP DNS / GSLB audit / Auditoría DNS/GSLB de solo lectura (independiente de F5Audit LTM).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=examples,
     )
@@ -145,41 +187,54 @@ and the final output prints an analyze command you can copy and paste.
     subs = p.add_subparsers(dest="command", required=True)
     for name in ("validate", "collect", "analyze"):
         sub = subs.add_parser(name, help={
-            "validate": "Check DNS API read permissions",
-            "collect": "Collect a read-only snapshot into JSON files",
-            "analyze": "Analyze a saved snapshot and export Excel/CSV",
+            "validate": "Check DNS API read permissions / Comprobar permisos API DNS",
+            "collect": "Collect a read-only JSON snapshot / Recopilar RAW JSON sin modificar BIG-IP",
+            "analyze": "Analyze saved snapshot, export Excel/CSV / Analizar RAW y exportar Excel/CSV",
         }[name], formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog={"validate": validate_examples, "collect": collect_examples,
                     "analyze": analyze_examples}[name])
         if name in ("validate", "collect"):
             sub.add_argument("-ho", "--host", required=True,
-                             help="BIG-IP management IP address or DNS hostname (FQDN)")
-            sub.add_argument("-u", "--user", required=True, help="BIG-IP username")
-            sub.add_argument("-p", "--password", help="Not recommended; prompt or F5AUDITDNS_PASSWORD is safer")
-            sub.add_argument("--insecure", action="store_true", help="Disable TLS certificate verification (lab only)")
-            sub.add_argument("--timeout", type=int, default=30, help="REST timeout (default: 30s)")
-            sub.add_argument("--page-size", type=int, default=100, help="Objects per REST page (default: 100)")
-            sub.add_argument("--provider", default="tmos", help="Authentication provider (default: tmos)")
+                             help="BIG-IP management IP or FQDN / IP de administración o nombre DNS")
+            sub.add_argument("-u", "--user", required=True, help="BIG-IP username / Usuario BIG-IP")
+            sub.add_argument("-p", "--password", help="Not recommended: use prompt/env var / Preferir prompt o variable F5AUDITDNS_PASSWORD")
+            sub.add_argument("--insecure", action="store_true", help="Disable TLS verification (authorized cases) / Desactivar TLS (casos autorizados)")
+            sub.add_argument("--timeout", type=int, default=30, help="REST timeout (default 30s) / Timeout REST (30s)")
+            sub.add_argument("--page-size", type=int, default=100, help="Objects per REST page (100) / Objetos por página REST (100)")
+            sub.add_argument("--provider", default="tmos", help="Authentication provider (tmos) / Proveedor de autenticación (tmos)")
         if name == "collect":
             sub.add_argument("-o", "--save-raw", default=None,
-                             help="Snapshot directory (default: ./f5auditDNS_raw_HOSTNAME_YYYYMMDD_HHMM)")
-            sub.add_argument("--no-stats", action="store_true", help="Collect configuration only; skip operational REST statistics")
+                             help="Snapshot directory / Directorio RAW (default: ./f5auditDNS_raw_HOSTNAME_YYYYMMDD_HHMM)")
+            sub.add_argument("--no-stats", action="store_true", help="Skip operational /stats / Omitir estadísticas operativas")
             sub.add_argument("--scope", choices=("core", "all"), default="all",
-                             help="core: GSLB objects only; all: also monitors, iRules, topology, listeners")
+                             help="core: GSLB only; all: auxiliaries / core: GSLB; all: monitores, reglas y topología")
         if name == "analyze":
-            sub.add_argument("--from-raw", required=True, help="Previously collected snapshot directory")
+            sub.add_argument("--from-raw", required=True, help="Saved DNS RAW directory / Directorio RAW DNS existente")
             sub.add_argument("--ltm-raw", action="append", default=[], metavar="GSLB_SERVER=PATH",
-                             help="Optional F5Audit LTM raw snapshot mapped to a DNS GSLB Server; repeat per server")
+                             help="Explicit GSLB Server=LTM RAW mapping / Mapeo explícito GSLB Server=RAW LTM (repetible)")
             sub.add_argument("--ltm-raw-dir", action="append", default=[], metavar="DIR",
-                             help="Auto-discover any number of F5Audit LTM raw snapshots under DIR; recursive; repeatable")
+                             help="Find LTM RAWs recursively (repeatable) / Buscar RAW LTM recursivamente (repetible)")
             sub.add_argument("--ltm-coverage-complete", action="store_true",
-                             help="Operator confirms ALL relevant LTM devices are represented by the supplied snapshots; "
-                                  "required for automatic absence-based cleanup candidates with --ltm-raw-dir")
+                             help="Operator asserts complete relevant LTM coverage; no automatic approval / "
+                                  "Operador confirma cobertura LTM; no autoriza eliminación")
+            sub.add_argument("--virtual-server", "--vs", action="append", default=[], metavar="NAME",
+                             help="Highlight VS name or SERVER:VS (repeatable) / Resaltar VS o SERVER:VS (repetible)")
+            sub.add_argument("--object", "--search", action="append", default=[], metavar="NAME",
+                             help="Highlight object name or endpoint / Resaltar nombre de objeto, pool, Wide IP o IP")
+            sub.add_argument("--file", action="append", default=[], metavar="FILE",
+                             help="TXT/CSV/XLSX: highlight names and IPs; IP values ALSO simulate "
+                                  "unapproved FreedIP cleanup / Resaltar y simular IPs como evidencia NO aprobada")
+            sub.add_argument("--search-only", action="store_true",
+                             help="With --file, highlight only (skip automatic FreedIP simulation) / "
+                                  "Solo resaltar, sin simulación automática")
+            sub.add_argument("--freed-ip-file", metavar="FILE",
+                             help="Additional explicit FreedIP evidence; merges with --file IPs / "
+                                  "Evidencia adicional de IPs decomisionadas, sin aprobación automática")
             sub.add_argument("--max-snapshot-gap-hours", type=float, default=48, metavar="HOURS",
-                             help="Maximum DNS vs LTM snapshot time difference for candidates (default: 48h)")
-            sub.add_argument("-o", "--out", default="F5_DNS_Audit.xlsx", help="Output .xlsx or CSV directory")
+                             help="Max DNS/LTM age gap (48h) / Diferencia máxima RAW DNS/LTM (48h)")
+            sub.add_argument("-o", "--out", default="F5_DNS_Audit.xlsx", help="Output XLSX or CSV directory / Excel o directorio CSV de salida")
             sub.add_argument("--format", choices=("excel", "csv"), default="excel")
-        sub.add_argument("-v", "--verbose", action="store_true", help="Show REST collection progress")
+        sub.add_argument("-v", "--verbose", action="store_true", help="Show collection progress / Mostrar progreso de la recolección")
     return p
 
 
@@ -266,13 +321,36 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  LTM {inv.host} | {len(inv.virtuals)} VS | {inv.directory}")
             for warning in ltm_scan.warnings:
                 print(f"  WARNING: {warning}")
+        search_terms = load_search_terms(args.virtual_server, args.object, args.file)
+        if args.file and not search_terms:
+            raise ValueError("No valid search values found in --file; use IP addresses or object names")
+        if search_terms:
+            print(f"Offline search: {len(search_terms)} unique term(s); yellow highlights do not change Verdict or approval")
+        # A --file list may mix names and IP addresses. Names are search terms
+        # only; valid IP or IP:port[%RD] entries also feed the existing FreedIP
+        # impact simulator. All results are REVIEW/PENDING, never approvals.
+        # --search-only restores the previous highlight-only --file behavior.
+        evidence_files = ([args.freed_ip_file] if args.freed_ip_file else [])
+        if not args.search_only:
+            evidence_files += args.file
+        found_ip_evidence = {}
+        for filename in evidence_files:
+            for record in load_freed_ips(filename):
+                found_ip_evidence.setdefault((record.ip, record.port, record.route_domain), record)
+        freed_ips = list(found_ip_evidence.values())
+        if freed_ips:
+            print(f"FreedIP simulation: {len(freed_ips)} distinct IP/endpoint(s) from file(s); "
+                  "evidence only, Approval Status=PENDING")
+        elif args.file:
+            print("No IP endpoints in --file for FreedIP simulation; search/highlighting only")
         audit = analyze(snapshot, ltm_snapshots, args.max_snapshot_gap_hours,
-                        ltm_scan=ltm_scan, ltm_coverage_complete=args.ltm_coverage_complete)
+                        ltm_scan=ltm_scan, ltm_coverage_complete=args.ltm_coverage_complete,
+                        freed_ips=freed_ips)
         if args.format == "csv":
-            paths = as_csv(audit, args.out)
+            paths = as_csv(audit, args.out, search_terms=search_terms)
             print(f"Generated {len(paths)} CSV files in {args.out}")
         else:
-            filename = as_excel(audit, args.out)
+            filename = as_excel(audit, args.out, search_terms=search_terms)
             print(f"Excel report: {filename}")
         print(f"Wide IPs: {len(audit.wideips)} | Pools: {len(audit.pools)} "
               f"| Members: {len(audit.members)} | Review items: {len(audit.manual_review)} "

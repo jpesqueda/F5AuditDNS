@@ -4,13 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "f5auditdns"
-version = "0.4.0"
+version = "0.5.2"
 description = "Read-only, evidence-first audit for F5 BIG-IP DNS GSLB with offline JSON snapshots and Excel/CSV reports"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 keywords = ["f5", "big-ip", "dns", "gtm", "gslb", "audit", "automation"]
+classifiers = [
+    "Natural Language :: English",
+    "Natural Language :: Spanish",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: System :: Networking",
+    "Environment :: Console",
+]
 dependencies = ["requests>=2.25", "openpyxl>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/jpesqueda/F5AuditDNS"
+Documentation = "https://github.com/jpesqueda/F5AuditDNS#readme"
+Source = "https://github.com/jpesqueda/F5AuditDNS"
+Issues = "https://github.com/jpesqueda/F5AuditDNS/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]

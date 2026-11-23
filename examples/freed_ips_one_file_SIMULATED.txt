@@ -1,0 +1,5 @@
+# Synthetic test data: one IP or endpoint per line.
+192.0.2.200
+192.0.2.100
+198.51.100.50:443
+192.0.2.42%3:8443

@@ -1,453 +1,173 @@
-# F5AuditDNS — Auditoría de F5 BIG-IP DNS / GSLB
+# F5AuditDNS — BIG-IP DNS/GSLB Audit & Cleanup Review
 
-**Versión:** 0.4.0 (prototipo funcional, pendiente de validación contra un BIG-IP DNS real; diseñado inicialmente para la estructura REST de TMOS 12+)  
-**Plataformas:** Windows / Linux / macOS, Python 3.9+  
-**Proyecto independiente:** no modifica, instala ni importa `f5audit` (LTM).
+**Development version 0.5.2** · Python 3.9+ · Windows / Linux / macOS · **READ ONLY**
 
-F5AuditDNS reutiliza la filosofía de F5Audit LTM: **READ ONLY → RAW JSON → CORRELACIÓN → REPORTE**.
+**Language / Idioma:** [English](#english) | [Español](#español)
 
-> **Advertencia de producción:** esta versión identifica candidatos a cleanup y propone comandos `tmsh` **como texto**, sin ejecutarlos. Un veredicto no autoriza la eliminación: confirma siempre estados actuales, asociaciones DNS, aplicaciones de DR y un backup fiel de la configuración antes del cambio.
+[Source / Código](https://github.com/jpesqueda/F5AuditDNS) · [English documentation](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/USER_GUIDE_EN.md) · [Documentación en español](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/USER_GUIDE_ES.md)
 
-## Qué cambia en 0.4.0
+---
 
-- El Excel conserva **Destination** y separa **Destination IP**, **Port**, **Route Domain**, **Service** y el resultado del parseo. El puerto numérico se extrae aunque la respuesta no incluya un campo separado. Si el servicio no se puede resolver con certeza se conserva su nombre y se deja el puerto vacío. Un puerto 0 es comodín.
-- **Config**, **Availability**, **Operational State** y **Health** no son lo mismo. Health resume el estado operativo y da prioridad al estado deshabilitado. **UNKNOWN** es un valor reportado por el equipo. **NOT OBSERVED** significa que no hay un estado aplicable en el snapshot. **Health Source** y **Collection Health** distinguen los datos de `/stats`, configuración antigua con estado embebido, permisos, endpoints no soportados y falta de métricas para un objeto.
-- **GSLB Pool Findings** muestra conteos de miembros por estado y los contadores DNS que reporte la API (preferido, alterno, fallback, descartes y retorno). Una celda de contador vacía no equivale a cero. Los contadores son acumulados, no una tasa ni prueba de uso reciente.
-- **Pool Members** y **GSLB Virtual Servers** cruzan IP, puerto y route domain con F5Audit LTM. **ADDRESS_PRESENT_DIFFERENT_NAME** es un endpoint que sigue presente bajo otro nombre. **IP_PRESENT_DIFFERENT_PORT** no es una coincidencia del servicio. No se usan coincidencias parciales, ambiguas o sin puerto válido para inferir remoción.
-- **LTM Health** se obtiene de `ltm_virtual_stats.json` en el RAW de F5Audit, cuando existe. Se muestra el nombre LTM encontrado, el destino, el rol de failover y la evidencia por equipo. Si hay una coincidencia activa única se prefieren sus contadores; no se suman activos y standby. Un virtual server offline que aún está en el LTM queda para revisión. El Excel de F5Audit no se importa como fuente de veredictos.
-- Se puede analizar un RAW DNS anterior para obtener las nuevas columnas y el cruce. Para estados GSLB operativos hay que volver a ejecutar `collect` en una carpeta nueva. Si solo se requiere configuración, usar `collect --no-stats`.
+## English
 
-El código y los ejemplos no incluyen datos de producción. Durante una auditoría real, el RAW y Excel contienen inventario local (incluye nombres y direcciones necesarios para la correlación). Guárdalos fuera del repositorio. No copies capturas, archivos RAW reales, reportes reales ni credenciales a issues, commits o releases.
+### What does F5AuditDNS do?
 
-## 1. ¿Qué audita?
+It collects BIG-IP DNS/GSLB configuration through iControl REST into offline JSON RAW snapshots, reconstructs **Wide IP → GSLB Pool → Pool Member → GSLB Server → GSLB Virtual Server → Destination IP/Port/Route Domain** relationships, optionally compares endpoints with any number of F5Audit LTM RAW snapshots, and generates full Excel or CSV review reports. It does **not** change BIG-IP configuration.
 
-```text
-  Wide IP (app.empresa.example)
-       |
-       +-- GSLB Pool A: pool_app
-       |       +-- GSLB member GDL-F5:vs_app
-       |       +-- GSLB member QRO-F5:vs_app
-       |
-       +-- Last Resort Pool: pool_fallback (A o CNAME)
+The 13 original audit worksheets remain. The reference engine adds **Reference Map**, **Object Inventory**, **Pool Impact** and **Cleanup Procedure**. Optional **FreedIP** and **Search Results** tabs appear only when their corresponding inputs are provided. Original status, statistics, LTM evidence and cleanup annotations remain in the workbook.
 
-  Data Center (DC_GDL)
-       +-- GSLB Server (GDL-F5)
-               +-- GSLB Virtual Server (vs_app)
-```
-
-| Objeto | Estado v0.1.0 | Evaluación |
-|---|---|---|
-| Wide IP A / AAAA / CNAME / MX / NAPTR / SRV | Incluido | Pools asociados, reglas, Last Resort Pool, enabled/disabled |
-| GSLB Pool por tipo de registro | Incluido | Miembros, referencias directas de Wide IP, método y monitor |
-| GSLB Pool Member | Incluido | Resolución *conservadora* a Server + Virtual Server |
-| GSLB Server | Incluido | Data Center, virtual servers y referencias mapeadas |
-| GSLB Virtual Server | Incluido | IP/puerto cuando API lo proporciona, estado configuración |
-| Data Center | Incluido | Servidores asociados |
-| Monitores GTM, Listeners, iRules, Topology, Regions, Prober Pools | Inventario opcional | Sin decidir si están en desuso |
-| DNS Express, DNS Cache, Zones, DNSSEC, DNS Sync Groups | **No incluidos** | Propuesta de versiones futuras |
-| Estadísticas históricas, Queries/sec, disponibilidad temporal | **No incluidos** | No puede afirmarse inactividad por cero tráfico |
-
-### Diferencia importante entre configuración y salud
-
-- **Config: ENABLED / DISABLED / UNKNOWN** describe si el objeto está administrativamente habilitado.
-- **Health: UP / DOWN / UNKNOWN** se llena solamente cuando el JSON expone un campo de disponibilidad compatible. En muchos snapshots de *configuración* será `UNKNOWN`.
-- La ausencia de información equivale a `UNKNOWN`, **nunca a `EMPTY`, `DOWN` o `ORPHAN`**.
-
-## 2. Instalación en Windows (PowerShell)
-
-Descomprime el ZIP del proyecto. Abre PowerShell en la carpeta que tiene `pyproject.toml`.
+### Install
 
 ```powershell
-cd D:\Automation_Projects\F5AuditDNS
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-
+py -m pip install f5auditdns
 f5auditdns --version
 f5auditdns --help
 ```
 
-Si PowerShell bloquea la activación, puedes usar directamente:
+To install a **development archive before PyPI publication**, unzip it and run `py -m pip install .` from the project directory instead. A development version may not be available from PyPI yet.
+
+### 1. Validate and collect (live, read-only)
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m f5auditdns --help
-```
-
-### Dependencias
-
-- `requests`: iControl REST por HTTPS.
-- `openpyxl`: formato Excel.
-- `pytest` (opcional): tests de desarrollo.
-
-**No necesita:** Linux, pyATS, Genie, Netmiko ni acceso SSH para la auditoría inicial. También puedes instalar dependencias con `py -m pip install -r requirements.txt`.
-
-## 3. Uso paso a paso
-
-### 3.1 Validar lectura en la API (IP o nombre DNS)
-
-```powershell
-# IP de administración
 f5auditdns validate -ho 192.0.2.20 -u auditor
-f5auditdns validate -ho 192.0.2.20 -u auditor --insecure
-
-# Nombre de dominio (FQDN) de administración
-f5auditdns validate -ho f5auditdns.com -u auditor
-f5auditdns validate -ho f5auditdns.com -u auditor --insecure
+f5auditdns collect -ho dns01.example.test -u auditor
+f5auditdns collect -ho dns01.example.test -u auditor -o ".\DNS_RAW"
 ```
 
-`-ho` puede ser una IP o un nombre que resuelva por DNS hacia la **interfaz de administración HTTPS** del F5; `f5auditdns.com` es un ejemplo de formato, no un endpoint de laboratorio disponible.
+The password is securely prompted. TLS verification is enabled by default; `--insecure` is for authorized exception/lab scenarios. `collect` includes REST `/stats` unless `--no-stats` is given. Without `-o`, a hostname/timestamp snapshot folder is created automatically.
 
-La contraseña se solicita sin mostrarla. Por defecto se verifica el certificado HTTPS. `--insecure` deshabilita esta verificación y debe reservarse para laboratorios o casos controlados.
-
-### 3.2 Recopilar información (carpeta automática)
-
-**Recomendado: sin `-o`**, la herramienta consulta por lectura `/mgmt/tm/sys/global-settings` para descubrir el hostname del BIG-IP y crea una carpeta nueva en el **directorio desde el que ejecutas `collect`**. Utiliza la fecha y hora local de inicio de ejecución:
-
-```text
-f5auditDNS_raw_<hostname>_<YYYYMMDD_HHMM>/
-```
-
-Si la API no devuelve hostname o responde con error, utiliza el valor suministrado con `-ho` y muestra un aviso. Para evitar sobrescrituras, si ejecutas dos recopilaciones del mismo F5 en un minuto, la segunda carpeta agrega `_02`, `_03`, etc.
+### 2. Analyze DNS and LTM RAW (offline)
 
 ```powershell
-# Con una IP de administración
-f5auditdns collect -ho 192.0.2.20 -u auditor --insecure
-
-# Con un FQDN de administración
-f5auditdns collect -ho f5auditdns.com -u auditor
-f5auditdns collect -ho f5auditdns.com -u auditor --insecure
+f5auditdns analyze `
+  --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  -o ".\F5DNS_Cleanup.xlsx"
 ```
 
-Salida ilustrativa (un F5 que reporta `dns01.empresa.example`):
+This reuses existing RAWs without contacting BIG-IP. `--ltm-coverage-complete` is an **operator assertion** of complete LTM snapshot coverage, not an automatic validation or permission to delete.
 
-```text
-Collecting BIG-IP DNS/GSLB: 192.0.2.20 | scope=all
-BIG-IP password: ********
-Raw snapshot saved: .\f5auditDNS_raw_dns01.empresa.example_20261111_1653 | OK datasets: 35 | warnings: 0
-The audit is read-only; no configuration was modified.
-
-Next step: analyze this snapshot (run in the SAME directory):
-  f5auditdns analyze --from-raw ".\f5auditDNS_raw_dns01.empresa.example_20261111_1653" -o ".\DNS_Audit.xlsx"
-```
-
-El archivo `DNS_Audit.xlsx` se genera en el **directorio actual**, junto a la carpeta de snapshot, no dentro de ella.
-
-### 3.3 Recopilar información (carpeta manual)
-
-Puedes seguir usando `-o` para fijar una carpeta personalizada:
+### 3. Search a Virtual Server or list; highlight matching cells yellow
 
 ```powershell
-f5auditdns collect -ho 192.0.2.20 -u auditor --insecure -o .\raw_dns
-f5auditdns collect -ho f5auditdns.com -u auditor --insecure -o .\raw_dns
-f5auditdns collect -ho 192.0.2.20 -u auditor -o .\raw_dns_core --scope core --verbose
+# Search one VS by short name:
+f5auditdns analyze --from-raw ".\DNS_RAW" --virtual-server "vs_app" -o ".\VS_Search.xlsx"
+
+# Search one exact server/VS pair:
+f5auditdns analyze --from-raw ".\DNS_RAW" `
+  --virtual-server "/Common/GDL-F5:/Common/vs_app" -o ".\VS_Search.xlsx"
+
+# Search IPs, names, endpoints from a TXT, CSV, or multi-column XLSX:
+f5auditdns analyze `
+  --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  --file ".\freed_ips.txt" `
+  -o ".\F5DNS_Highlighted.xlsx"
 ```
 
-Al terminar, **siempre imprime el comando `analyze`** con la ruta real de la carpeta elegida, ya sea manual o automática, incluso cuando existan advertencias y se guarde un snapshot incompleto.
+`--vs` aliases `--virtual-server`; `--object` (alias `--search`) accepts other GSLB names or IPs. These options can be repeated. The **full report is preserved**, relevant identity/destination cells are colored **yellow**, and `Search Results` records matches and missing terms. IP matching respects exact addresses, optional port and route domain; mere substring matches are rejected. Search **never changes cleanup decisions**.
 
-- `--scope core`: Wide IPs, GSLB Pools, Members, Servers, Virtual Servers, Data Centers.
-- `--scope all` (predeterminado): también consulta Monitors, iRules, Listeners, Topology, Regions y Prober Pools.
-- Las carpetas existentes con datos no se sobrescriben.
-- Si algún endpoint devuelve `403`, `404` u otro error, queda registrado en `Collection Health`.
-- Los JSON contienen información de infraestructura y deben protegerse.
+`--file` now performs **both tasks with one input**: yellow highlights plus **unapproved FreedIP/Pool Impact simulation for valid IPs**. VS/object names are highlighted only. For the former search-only behavior use `--file FILE --search-only`. `--freed-ip-file` remains available for explicit additional evidence. Neither changes `Verdict` or `Approval Status=PENDING`.
 
-### 3.4 Analizar offline, generar Excel o CSV
+### 4. Evaluate decommissioned IPs (simulation only)
 
 ```powershell
-f5auditdns analyze --from-raw .\raw_dns -o .\DNS_Audit.xlsx
-f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
+f5auditdns analyze --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  --file ".\freed_ips.txt" `
+  -o ".\DNS_Cleanup_Reviewed.xlsx"
 ```
 
-Este análisis no requiere conectividad con el BIG-IP ni `--insecure`. Opcionalmente puedes asociar uno o varios snapshots originales de F5Audit LTM con `--ltm-raw` para confirmar si las VIPs siguen existiendo.
+A plain IP is never proof of endpoint decommission. `Pool Impact` is hypothetical; a simulated empty pool still requires validation of Wide IPs, Last Resort Pools, iRules, DR and topology. `Approval Status` defaults to `PENDING`.
 
-### 3.5 Ayuda y más ejemplos
+### 5. Safety & report interpretation
+
+All `tmsh` Delete/Modify/Create/Rollback commands in the report are **`NOT RUN` references** and are **never executed**. Exact rollback is not guaranteed without the saved original `tmsh list ... all-properties` / approved full backup; the tool reports `ROLLBACK INCOMPLETE` when appropriate. `Health=NOT OBSERVED` means missing operational evidence, not downtime; `NOT_FOUND_IN_SCANNED_LTMS` is not proof of global absence. Use approved procedures and verify on the live BIG-IP before cleanup.
+
+**Full instructions:** [English user guide](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/USER_GUIDE_EN.md) · [Reference engine](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/REFERENCE_ENGINE_EN.md) · [GitHub Actions publishing](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/PUBLISHING_GITHUB_ACTIONS_EN.md)
+
+---
+
+## Español
+
+### ¿Para qué sirve F5AuditDNS?
+
+F5AuditDNS recopila por iControl REST la configuración de BIG-IP DNS/GSLB y crea snapshots **RAW JSON**. Reconstruye las relaciones **Wide IP → GSLB Pool → Pool Member → GSLB Server → GSLB Virtual Server → IP/Puerto/Route Domain**. Puede comparar los destinos contra cualquier cantidad de RAW originales de F5Audit LTM y genera un Excel o CSV para revisión de cleanup. **No modifica la configuración de los equipos.**
+
+Se conservan las **13 hojas originales**, más **Reference Map**, **Object Inventory**, **Pool Impact** y **Cleanup Procedure**. Las hojas opcionales **FreedIP** y **Search Results** aparecen si se proporcionan sus entradas. Los estados, estadísticas, monitores, evidencias LTM y observaciones anteriores siguen disponibles.
+
+### Instalación
 
 ```powershell
+py -m pip install f5auditdns
+f5auditdns --version
 f5auditdns --help
-f5auditdns validate --help
-f5auditdns collect --help
-f5auditdns analyze --help
 ```
 
-Tanto la ayuda principal como la de `validate` y `collect` incluyen ejemplos con IP, FQDN y `--insecure`.
+Si la versión de desarrollo aún no está en PyPI, descomprime el ZIP del proyecto y ejecuta `py -m pip install .` dentro de la carpeta que contiene `pyproject.toml`.
 
-### 3.6 Ejemplo offline sin F5
-
-El ZIP incluye una captura **completamente ficticia** para practicar:
+### 1. Validar y recolectar (solo lectura)
 
 ```powershell
-f5auditdns analyze --from-raw .\examples\raw_simulado -o .\DNS_Audit.xlsx
+f5auditdns validate -ho 192.0.2.20 -u auditor
+f5auditdns collect -ho dns01.example.test -u auditor
+f5auditdns collect -ho dns01.example.test -u auditor -o ".\DNS_RAW"
 ```
 
-Para regenerar el snapshot ficticio, vacía antes la carpeta y ejecuta:
+Se solicita la contraseña de forma segura. La verificación TLS está activa por defecto; utiliza `--insecure` solo en casos autorizados. `collect` recupera estadísticas operativas salvo que se indique `--no-stats`. Sin `-o` crea una carpeta nueva con hostname y timestamp.
 
-```powershell
-python .\examples\generate_sample.py
-```
-
-## 3.7 Cleanup DNS con columnas Verdict / Notes / Delete / Rollback (v0.3.0)
-
-El informe diferencia entre **objetos sin referencias** y **objetos que realmente desaparecieron del LTM**.
-
-| Veredicto | Interpretación | Comando propuesto |
-|---|---|---|
-| `IN USE` | El objeto sigue referenciado o se encontró en algún snapshot LTM | Sí: referencia NOT RUN, no candidato |
-| `ORPHAN` | Pool sin referencias estáticas; inventarios completos y sin referencias GTM dinámicas | Sí, solo para Pools elegibles |
-| `INACTIVE` | Wide IP o Pool deshabilitado | Referencia NOT RUN para Pool; puede ser contingencia |
-| `OFFLINE (decommission candidate)` | Un VS GSLB o Pool Member apunta a una VIP ausente en su LTM explícitamente mapeado y el snapshot es reciente | Sí, con prerrequisitos y respaldo |
-| `MANUAL REVIEW` | DOWN, inconsistente, iRule, fallback u otra dependencia posible | Referencia NOT RUN cuando la sintaxis es segura; no candidato |
-| `UNRELIABLE` | Faltan datos/permisos o no se resolvió la identidad | Solo referencia segura o aviso de inspección manual |
-
-**No interpretes un Pool Member de GSLB como un Node backend de LTM.** GSLB suele apuntar a una VIP de aplicación, y F5Audit LTM tiene que inspeccionar su Pool/Nodes por separado. La v0.3.0 compara el **Virtual Server y su dirección de destino** con el inventario LTM, no todos los backend Pool Members.
-
-### Sin comparación LTM: detectar Pools potencialmente huérfanos
-
-```powershell
-f5auditdns analyze --from-raw .\raw_dns -o .\DNS_Audit.xlsx
-```
-
-El objeto `gtm pool` solo obtiene veredicto `ORPHAN` si están completos los datasets y las asociaciones Wide IP/Last Resort, se consultaron iRules/distributed-apps y no se detectaron referencias dinámicas. Ante dudas, se devuelve `MANUAL REVIEW`.
-
-### Con comparación LTM: detectar miembros GSLB antiguos
-
-Primero recopila con la herramienta **F5Audit LTM original** en cada BIG-IP LTM involucrado. Después proporciona sus directorios RAW originales usando el formato `NOMBRE_GSLB_SERVER=RUTA_LTM`:
-
-```powershell
-f5auditdns analyze --from-raw .\f5auditDNS_raw_dns01.example.test_20261111_1653 `
-  --ltm-raw "/Common/GDL-F5=.\raw_ltm_gdl" `
-  --ltm-raw "/Common/QRO-F5=.\raw_ltm_qro" `
-  -o .\DNS_Audit.xlsx
-```
-
-En PowerShell, escribe el comando en una sola línea o usa acento grave (backtick) para continuarlo. Cada backtick al final de línea indica continuación en PowerShell; no agregues espacios después del backtick.
-
-La asociación es **explícita** porque el nombre de un Server GTM no necesariamente coincide con el hostname administrativo del dispositivo LTM. No asumas la identidad por parecido de nombres. Si faltan los snapshots o la diferencia de hora entre DNS y LTM supera 48 h, la herramienta no promoverá la ausencia a candidato. Puedes ajustar ese umbral con `--max-snapshot-gap-hours 24`.
-
-### v0.3.0: buscar automáticamente en cualquier cantidad de RAW LTM
-
-Ejecuta **un DNS a la vez**. El proyecto no compara DNS peers ni audita Sync Groups.
-Guarda todas tus carpetas RAW de F5Audit LTM dentro de un directorio, con
-subcarpetas de cualquier profundidad. Por ejemplo:
-
-```text
-Audits/
-  dns01_raw/
-  TodosLosLTM/
-    ltm01/raw/_meta.json + ltm_virtual@Common.json + auth_partition.json
-    ltm02/raw/_meta.json + ltm_virtual@Common.json + auth_partition.json
-    ltm03/raw/_meta.json + ltm_virtual@Common.json + auth_partition.json
-    ... (uno, seis, diez o cualquier cantidad)
-```
-
-En **PowerShell**:
+### 2. Analizar RAW DNS y LTM (offline)
 
 ```powershell
 f5auditdns analyze `
-  --from-raw ".\Audits\dns01_raw" `
-  --ltm-raw-dir ".\Audits\TodosLosLTM" `
-  -o ".\DNS01_Cleanup.xlsx"
+  --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  -o ".\F5DNS_Cleanup.xlsx"
 ```
 
-`--ltm-raw-dir` se puede repetir con varias carpetas raíz. No necesitas especificar
-manualmente los nombres de los GSLB Servers. El auditor examina inventarios LTM
-válidos, elimina duplicados de hostname conservando la captura más reciente,
-y muestra en `LTM Location` **los hostnames de los LTM donde aparece la VIP**.
-Si una VIP está configurada en ambos miembros de HA, aparecerán ambos nombres.
-No se asume una topología fija de cinco pares ni se exige HA: funciona con uno
-solo o con cualquier cantidad de BIG-IP LTM, también standalone.
+Reutiliza los RAW existentes sin conectar de nuevo a los F5. `--ltm-coverage-complete` es una **declaración del operador** de que están representados todos los LTM relevantes; no comprueba la cobertura ni autoriza cambios.
 
-**Reglas de evidencia:**
-
-- `PRESENT` = se encontró el nombre + dirección en al menos un RAW LTM.
-- `ADDRESS_PRESENT_DIFFERENT_NAME` = la IP:puerto existe, pero su nombre es distinto.
-- `NAME_PRESENT_ADDRESS_DIFFERS` = el nombre existe, pero la IP:puerto es distinta.
-- `NOT_FOUND_IN_SCANNED_LTMS` = no existe en los snapshots *escaneados*.
-  **NO significa** que la VIP esté eliminada de toda la infraestructura.
-- Las ausencias globales quedan en `MANUAL REVIEW` por defecto, aunque solo
-  haya un RAW. Así se evitan falsos positivos en instalaciones incompletas.
-
-Si **tú confirmaste previamente** que el directorio contiene todos los LTM
-relevantes para ese DNS, puedes habilitar la evaluación de ausencia para
-candidatos, en conjunto con inventarios completos, referencias confiables y
-capturas recientes (48 horas de diferencia por defecto):
+### 3. Buscar un Virtual Server o lista y pintar las celdas de amarillo
 
 ```powershell
+# Un solo Virtual Server:
+f5auditdns analyze --from-raw ".\DNS_RAW" --virtual-server "vs_app" -o ".\VS_Resaltado.xlsx"
+
+# Virtual Server acotado a su GSLB Server:
+f5auditdns analyze --from-raw ".\DNS_RAW" `
+  --virtual-server "/Common/GDL-F5:/Common/vs_app" -o ".\VS_Resaltado.xlsx"
+
+# Lista desde TXT, CSV o Excel (varias columnas):
 f5auditdns analyze `
-  --from-raw ".\Audits\dns01_raw" `
-  --ltm-raw-dir ".\Audits\TodosLosLTM" `
-  --ltm-coverage-complete `
-  -o ".\DNS01_Cleanup_Reviewed.xlsx"
+  --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  --file ".\freed_ips.txt" `
+  -o ".\F5DNS_Resaltado.xlsx"
 ```
 
-Este flag es una **declaración explícita del operador**: la herramienta no puede
-probar por sí sola que existen RAW de todos los LTM relevantes. Si falta algún
-inventario, hay archivos inválidos o son antiguos, **no** se genera una
-conclusión negativa de confianza. El estado `OFFLINE` y la clasificación de
-cleanup requieren validación adicional con los dispositivos en vivo.
+`--vs` es un alias de `--virtual-server`; `--object` (alias `--search`) busca pools, nombres, Wide IPs e IPs. Puedes repetir las opciones. El reporte **no se reduce ni se filtra**: únicamente se colorean **las celdas coincidentes en amarillo**. La hoja nueva **Search Results** indica términos encontrados y no encontrados, hoja, fila y columnas coincidentes. Las búsquedas de IP no aceptan coincidencias parciales ni confunden puerto o Route Domain. **Buscar no cambia los veredictos.**
 
-### Comandos de referencia NOT RUN (todos los servidores y miembros)
+`--file` ahora hace **ambas cosas con el mismo archivo**: resalta coincidencias en amarillo y considera las IPs válidas como **evidencia para simulación FreedIP/Pool Impact sin aprobación**. Los nombres de objetos o VS solo se buscan. Para buscar sin simular utiliza `--file ARCHIVO --search-only`. `--freed-ip-file` sigue disponible para evidencia adicional; ninguna opción modifica `Verdict` ni `Approval Status=PENDING`.
 
-Las columnas `Delete` y `Rollback` de `Pool Members`, `GSLB Virtual Servers`,
-`GSLB Pool Findings` y `GSLB Servers` ahora incluyen referencias **aunque el
-objeto sea `IN USE`**. Cada línea empieza con `NOT RUN:` para impedir que el
-reporte parezca un script listo para ejecutar. Ejemplo:
-
-```text
-Verdict: IN USE
-LTM Location: ltm-gdl-a, ltm-gdl-b
-Delete:   NOT RUN: tmsh modify gtm pool a /Common/pool_app members delete { /Common/GDL-F5:/Common/vs_app }
-Rollback: NOT RUN: # BEFORE DELETE: tmsh list gtm pool a /Common/pool_app all-properties
-          NOT RUN: # Review member attributes before re-adding
-          NOT RUN: tmsh modify gtm pool a /Common/pool_app members add { /Common/GDL-F5:/Common/vs_app { enabled ratio 1 } }
-          NOT RUN: # Verify against saved full tmsh config
-```
-
-**Una referencia NO es autorización de borrado.** La hoja `Cleanup Candidates`
-conserva únicamente objetos con veredicto elegible, no todos los que tienen
-un comando. Para `GSLB Server` y `Pool`, la restauración exacta necesita una
-copia fiel de la configuración previa; no es seguro fabricar una instrucción
-`create` completa a partir de un JSON incompleto. Para Virtual Servers con
-descubrimiento automático, la referencia de borrado puede resultar inválida
-u ocasionar que el objeto reaparezca; siempre se clasifica para revisión.
-
-**Vocabulario:** `GSLB Server` es un objeto de BIG-IP DNS; `LTM Location` indica
-el dispositivo físico (hostname del snapshot F5Audit LTM) donde encontramos
-la VIP del GSLB Virtual Server. No equivale a un Node backend.
-
-### Ejemplo con snapshots ficticios incluidos
+### 4. Simulación de cleanup con FreedIP
 
 ```powershell
-f5auditdns analyze --from-raw .\examples\raw_cleanup_simulado --ltm-raw "/Common/GDL-F5=.\examples\ltm_raw_gdl_simulado" -o .\DNS_Cleanup_Demo.xlsx
+f5auditdns analyze --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  --file ".\freed_ips.txt" `
+  -o ".\F5DNS_Cleanup_Revision.xlsx"
 ```
 
-La salida incluye `Cleanup Candidates` con `Delete` y `Rollback`, y una hoja `LTM Inventories`. Para un miembro retirado, se propone:
+Una IP sola **no** demuestra que se retiró el servicio. `Pool Impact` simula miembros marcados y restantes, pero no ejecuta acciones. Un pool hipotéticamente vacío exige revisar Wide IPs, Last Resort, iRules, DR y topología; `Approval Status` inicia en `PENDING`.
 
-```text
-NOT RUN: tmsh modify gtm pool a /Common/pool_retired members delete { /Common/GDL-F5:/Common/vs_retired }
-```
+### 5. Seguridad e interpretación
 
-Y para restaurar, si se aprobaron los valores exactos del miembro:
+Todos los comandos `tmsh` Delete/Modify/Create/Rollback se muestran como **`NOT RUN`** y **nunca se ejecutan**. Un rollback exacto necesita un respaldo real del objeto (`tmsh list ... all-properties`) o backup aprobado; si faltan propiedades, aparece `ROLLBACK INCOMPLETE`. `Health=NOT OBSERVED` es evidencia faltante, no estado caído. `NOT_FOUND_IN_SCANNED_LTMS` no significa ausencia confirmada en toda la infraestructura. Revisa dependencias y estado en vivo antes de un cambio.
 
-```text
-NOT RUN: tmsh modify gtm pool a /Common/pool_retired members add { /Common/GDL-F5:/Common/vs_retired { enabled ratio 1 } }
-```
+**Documentación ampliada:** [Guía completa en español](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/USER_GUIDE_ES.md) · [Motor de referencias](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/REFERENCE_ENGINE_ES.md) · [Publicación en GitHub Actions](https://github.com/jpesqueda/F5AuditDNS/blob/main/docs/PUBLISHING_GITHUB_ACTIONS_ES.md)
 
-**Orden recomendado:** retirar primero la referencia del Pool Member, luego revisar si el Virtual Server GSLB ya está sin referencias, y solo después considerar eliminar el Pool, únicamente si se desvinculó de todos los Wide IPs y Last Resort Pools. Antes del cambio, guarda el resultado completo de `tmsh list gtm pool ... all-properties` y `tmsh list gtm server ... all-properties`. Los comandos de rollback parciales deben completarse con todos los atributos originales. **No ejecutar ningún comando solo por aparecer en el Excel.**
+---
 
-### Requisitos para validar con tu ambiente
+**Security / Seguridad:** Fictional examples use documentation IP ranges and `example.test` hostnames. Do not upload production RAWs, credentials, tokens, screenshots or infrastructure inventories to GitHub or PyPI. / Los ejemplos usan direcciones documentales y nombres ficticios. No compartas RAW de producción ni datos críticos.
 
-Para probar la correlación en producción necesitamos ejemplos anonimizados de: `tmsh list gtm pool a <pool> all-properties`, `tmsh list gtm server <server> all-properties`, snapshots RAW DNS y LTM tomados en una ventana cercana, y la versión exacta de TMOS. No compartas credenciales, tokens ni direcciones sensibles sin anonimizar.
-
-## 4. Hojas de reporte (13)
-
-| Hoja Excel | Pregunta que responde |
-|---|---|
-| Summary | ¿Cuántos objetos tiene este snapshot? ¿Está completo? |
-| Wide IP Findings | ¿Qué dominios tienen Pools, reglas y Last Resort? |
-| GSLB Pool Findings | ¿Qué Pools tienen miembros? ¿Qué Wide IPs los referencian? |
-| Pool Members | ¿Qué miembro pertenece a qué Pool? ¿Pude resolverlo al GSLB Server? |
-| GSLB Servers | ¿Qué servidores existen y a qué Data Center pertenecen? |
-| GSLB Virtual Servers | ¿Qué servicios tiene cada Server? |
-| Data Centers | ¿Cuántos GSLB Servers están asociados? |
-| DNS Chains | ¿Cuál es la cadena Wide IP → Pool → Member → Server → VS? |
-| Cleanup Candidates | Solo candidatos: acciones propuestas, ordenadas: miembros → GSLB virtual servers → pools |
-| LTM Inventories | Hostname, snapshot y carpeta de cada LTM incluido automáticamente |
-| Manual Review | ¿Qué referencias o configuraciones necesitan revisión? |
-| Auxiliary Inventory | ¿Qué Monitors, iRules, Listeners, etc. fueron recopilados? |
-| Collection Health | ¿Qué consultas API fueron completadas, rechazadas o faltan? |
-
-### Interpretación de una cadena
-
-```text
-A /Common/app.empresa.example
-  -> A /Common/pool_app
-     -> /Common/GDL-F5:/Common/vs_app
-        -> GDL-F5
-           -> 192.0.2.100:443
-```
-
-Este vínculo **no prueba** que el destino esté activo o reciba consultas. Solo muestra asociaciones reconocidas por la herramienta.
-
-### Ejemplos de hallazgos
-
-| Hallazgo | Significado |
-|---|---|
-| `REFERENCED` | Existe una referencia directa mapeada, no una garantía de uso |
-| `MANUAL REVIEW: no direct Wide IP reference` | No está en una lista directa; podría ser usado por iRules, fallback u otros mecanismos |
-| `MANUAL REVIEW: no members` | El Pool aparece vacío; revisar diseño, fallback y mantenimiento |
-| `DATA GAP` | Endpoint/subcolección no accesible o referencia no resoluble |
-| `DISABLED` | Estado administrativo, no autorización para borrar |
-| `UNKNOWN` | La API no proporcionó evidencia suficiente |
-
-## 5. Seguridad
-
-- Todas las consultas de inventario son **GET**.
-- **Único POST:** `/mgmt/shared/authn/login` para solicitar el token de autenticación.
-- Los comandos `Delete` y `Rollback` se generan únicamente como texto para solicitudes de cambio. El programa **nunca los ejecuta**.
-- Contraseña oculta con `getpass`; se admite `F5AUDITDNS_PASSWORD` para automatización segura.
-- Certificado TLS verificado por defecto. `--insecure` es opcional y se recomienda solo para laboratorio.
-- Los snapshots tienen identificadores únicos; una carpeta con datasets mezclados se rechaza.
-- Nombres o descripciones de F5 se protegen contra inyección de fórmulas de Excel.
-- Se recomienda una cuenta de **solo lectura** y proteger el directorio de snapshots/reports.
-
-## 6. Estructura del proyecto
-
-```text
-F5AuditDNS/
-├── f5auditdns/
-│   ├── __init__.py             # Version
-│   ├── __main__.py             # python -m f5auditdns
-│   ├── client.py               # Reutilizado/adaptado de F5Audit LTM
-│   ├── cli.py                  # validate / collect / analyze
-│   ├── collector.py            # REST + JSON snapshots
-│   ├── analyzer.py             # Correlaciones GSLB
-│   ├── cleanup.py              # Verdict, Delete, Rollback (propuestas)
-│   ├── ltm_compare.py          # Comparación offline explícita LTM
-│   └── report.py               # Excel + CSV
-├── tests/                      # Pruebas offline
-├── examples/raw_simulado/      # Datos ficticios
-├── README.md                   # Esta guía
-├── PROJECT_CONTEXT.md         # Estado/alcance/versionado
-├── CHANGELOG.md               # Historial de versiones
-├── requirements.txt           # Dependencias principales
-├── NOTICE.md                   # Atribución MIT F5Audit
-├── LICENSE
-└── pyproject.toml
-```
-
-## 7. Limitaciones conocidas de v0.3.0
-
-1. **No validada contra dispositivos reales.** Se deben confirmar propiedades, referencias y permisos con la versión TMOS de tu ambiente.
-2. Las rutas REST de las subcolecciones y los datos devueltos pueden diferir entre versiones. Si no hay pruebas concluyentes, se marca `UNKNOWN`.
-3. Los campos `enabled`/`disabled` no sustituyen las estadísticas de disponibilidad operativa.
-4. No es un auditor de zonas DNS ni de DNS Express, Cache o DNSSEC; se centra en GSLB.
-5. No hay análisis histórico de tráfico. Solo se compara presencia de VIPs en snapshots LTM explícitamente asignados; no analiza aún los nodos backend de LTM.
-6. No hay soporte de múltiples hosts en una sola ejecución.
-7. Los comandos `tmsh` de cleanup son propuestas limitadas, no procedimientos de rollback garantizados: conserva `tmsh list ... all-properties` y un respaldo de configuración completo antes del cambio.
-
-## 8. Próximos pasos
-
-**v0.2.x:** validar snapshots de TMOS reales; mejorar correlación en particiones/subPaths y estados health; capturar estadísticas reales y diagnósticos de monitor.  
-**v0.3.0:** comparación de snapshots y hallazgos por períodos.  
-**v0.4.0:** múltiples BIG-IP DNS y reporte consolidado.  
-**v0.5.0:** DNS Services (Zones, DNS Express, DNSSEC, Cache) como módulo separado.  
-**Futuro:** un reporte DNS → LTM de extremo a extremo, manteniendo los repositorios independientes.
-
-## 9. Referencias F5
-
-- BIG-IP DNS operations guide: https://my.f5.com/manage/s/article/K55502976
-- GTM REST resources: https://clouddocs.f5.com/api/icontrol-rest/APIRef_tm_gtm.html
-- GTM Wide IP A: https://clouddocs.f5.com/api/icontrol-rest/APIRef_tm_gtm_wideip_a.html
-- GTM Pool A: https://clouddocs.f5.com/api/icontrol-rest/APIRef_tm_gtm_pool_a.html
-- GTM Server: https://clouddocs.f5.com/api/icontrol-rest/APIRef_tm_gtm_server.html
-- REST API and subcollections: https://cdn.f5.com/websites/devcentral.f5.com/downloads/icontrol-rest-api-user-guide-16-1-0.pdf
-
-### Licencia y atribución
-
-El cliente REST deriva del paquete F5Audit LTM 0.7.0 aportado como referencia. Se conserva la licencia MIT original y se documenta la atribución en `NOTICE.md`.
-
-
-## Publish with GitHub Actions
-
-To publish via Trusted Publishing, see [GitHub Actions publishing guide](docs/PUBLISHING_GITHUB_ACTIONS_ES.md).
+License / Licencia: MIT.

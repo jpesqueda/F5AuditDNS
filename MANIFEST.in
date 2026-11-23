@@ -1,0 +1,6 @@
+include README.md README_ES.md LICENSE NOTICE.md CHANGELOG.md CHANGELOG_ES.md PROJECT_CONTEXT.md PROJECT_CONTEXT_ES.md
+recursive-include docs *.md
+recursive-include examples *.json *.py *.txt *.csv
+recursive-include tests *.py
+exclude *.xlsx
+recursive-exclude f5auditdns __pycache__ *.pyc

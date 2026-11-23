@@ -150,7 +150,8 @@ def test_server_discovery_prevents_virtual_delete(tmp_path):
 def test_html_safe_cell_and_excel_sheet_count(tmp_path):
     from f5auditdns.report import SHEETS, as_excel
     assert any(x[0] == "Cleanup Candidates" for x in SHEETS)
-    assert len(SHEETS) == 13
+    assert len(SHEETS) == 18
+    assert [x[0] for x in SHEETS[:13]] == ["Summary", "Wide IP Findings", "GSLB Pool Findings", "Pool Members", "GSLB Servers", "GSLB Virtual Servers", "Data Centers", "DNS Chains", "Cleanup Candidates", "LTM Inventories", "Manual Review", "Auxiliary Inventory", "Collection Health"]
     path = tmp_path / "report.xlsx"
     as_excel(analyze(sample()), path)
     assert path.is_file()
