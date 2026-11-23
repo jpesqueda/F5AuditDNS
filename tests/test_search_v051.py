@@ -182,7 +182,7 @@ def test_narrative_excel_cells_are_not_search_queries(tmp_path):
 
 def test_bilingual_help_and_readme_present():
     assert 'amarillo' in parser().format_help().lower()
-    assert 'Español' in (ROOT / 'README.md').read_text()
-    assert 'English' in (ROOT / 'README.md').read_text()
+    assert 'Español' in (ROOT / 'README.md').read_text(encoding='utf-8')
+    assert 'English' in (ROOT / 'README.md').read_text(encoding='utf-8')
     assert (ROOT / 'docs' / 'USER_GUIDE_ES.md').exists()
     assert (ROOT / 'docs' / 'USER_GUIDE_EN.md').exists()
