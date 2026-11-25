@@ -1,6 +1,6 @@
 # F5AuditDNS — Guía de uso (Español)
 
-**Versión de desarrollo:** `0.5.3` | **Python:** 3.9 o superior | **Plataformas:** Windows, Linux y macOS.
+**Versión de desarrollo:** `0.5.4` | **Python:** 3.9 o superior | **Plataformas:** Windows, Linux y macOS.
 
 [Repositorio](https://github.com/jpesqueda/F5AuditDNS) · [English user guide](USER_GUIDE_EN.md)
 
@@ -9,6 +9,8 @@ F5AuditDNS es un auditor de F5 BIG-IP DNS/GSLB **de solo lectura**. Utiliza iCon
 **Regla de seguridad:** ningún comando `tmsh` se ejecuta; todos los comandos de cambio en el reporte llevan `NOT RUN:`. Un `Verdict`, una IP en FreedIP o una celda amarilla **nunca** constituyen autorización para borrar. Todas las aprobaciones inician en `PENDING`.
 
 ## Nuevo: modo `diagram` para mapear la topología (v0.5.3)
+
+**Mejora v0.5.4:** el diagrama abre en **Focused View** y solo presenta un Wide IP y sus dependencias. El explorador de servicios pagina 25 Wide IPs por pantalla, el buscador enfoca por FQDN/IP/Server/Data Center, y `Overview` permite revisar todo el inventario con paginación. Para objetos compartidos, `Show Dependencies` permite saltar a otros Wide IPs asociados. Se conserva todo el RAW, Excel, CSV, JSON y el modo de auditoría de solo lectura.
 
 Desde un RAW existente, sin nueva conexión al F5:
 

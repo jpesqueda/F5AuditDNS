@@ -1,6 +1,16 @@
 # Registro de cambios
 
-## [0.5.3] — 2026-11-24 (desarrollo, sin publicar)
+## [0.5.4] — 24 noviembre 2026 (en desarrollo; pendiente de CI y PyPI)
+
+- **Focused View** como modo predeterminado: una cadena de Wide IP a la vez, zoom legible y Service Explorer paginado de 25 servicios.
+- Búsqueda por FQDN, IP, VS, GSLB Server y Data Center con enfoque automático; conserva filtros de partición y estado.
+- **Overview** mantiene todas las particiones y objetos en revisión, con ramas plegadas, paginación y expansión limitada.
+- **Show Dependencies** permite navegar entre Wide IPs que comparten objetos. No se omite información del JSON, Excel ni CSV.
+- Pruebas sintéticas con 295 Wide IPs, validación JavaScript y navegador Chromium local.
+- READ ONLY, sin nuevos endpoints REST ni comandos de modificación. tmsh sigue NOT RUN.
+
+
+## [0.5.3] — 24 noviembre 2026 (publicada en PyPI)
 
 - Nuevo `diagram --from-raw` y alias `--diagram --raw`, sin repetir colecta.
 - Mapa global multi-partición con Wide IP, pools, miembros, VS, Servers, Data Centers y monitores.

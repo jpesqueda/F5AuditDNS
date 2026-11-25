@@ -1,2 +1,2 @@
 """F5AuditDNS: read-only BIG-IP DNS / GSLB configuration auditor."""
-__version__ = "0.5.3"
+__version__ = "0.5.4"

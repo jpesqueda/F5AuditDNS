@@ -1,5 +1,19 @@
 # F5AuditDNS — Modo diagrama GSLB (v0.5.3)
 
+## v0.5.4 — Vista enfocada y paginación
+
+El HTML abre en **Focused View** para ver un solo Wide IP con su cadena de dependencias. A la izquierda, el **Service Explorer** muestra **25 Wide IPs por página**. Puedes buscar por FQDN, IP, Virtual Server, GSLB Server o Data Center, filtrar por partición y salud y seleccionar el servicio deseado.
+
+- **Focused:** un servicio a la vez, zoom inicial legible y paginación por grupos de 25.
+- **Overview:** conserva el inventario completo con ramas plegadas y paginadas, incluidos los objetos en revisión.
+- **Show Dependencies:** desde el inspector puedes navegar a otros Wide IPs que comparten el objeto seleccionado.
+- **Integridad:** el archivo `gtm_topology.json` mantiene todos los nodos y relaciones, aunque se dibuje una parte pequeña. La herramienta es READ ONLY y los estados siguen siendo del snapshot.
+
+```powershell
+f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology" --open
+```
+
+
 **READ ONLY / SIN CONEXIÓN al analizar.** Es una extensión del recolector y analizador existentes de F5AuditDNS; no crea otro recolector con credenciales ni requiere un backend web.
 
 ## Uso recomendado
