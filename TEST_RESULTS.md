@@ -1,8 +1,8 @@
-# F5AuditDNS v0.5.4 — Validation summary
+# F5AuditDNS v0.6.0 validation (synthetic data)
 
-- **145 pytest tests passed locally** on Linux/Python 3.13, including all 136 v0.5.3 regression tests and nine v0.5.4 focused UI checks.
-- **Headless Chromium visual smoke test passed locally** with a fully synthetic 295-Wide-IP graph: 25-service pagination (12 pages), selecting service 31, switching Focused/Overview, bounded expansion, page navigation, exact search focusing service 173, empty-result behavior and shared-pool dependency navigation for 295 services. No JavaScript page errors.
-- Node.js `--check` passed for the rendered viewer scripts. Wheel (`.whl`) and source distribution (`.tar.gz`) built locally.
-- Windows 3.9/3.12 and Ubuntu 3.9/3.12 GitHub Actions: **pending at preparation time**; not presumed to pass.
-- No real TMOS environment validated in this change. No API writes or configuration operations introduced.
-- Test inputs include only synthetic hostnames and documentation IPs; real RAW snapshots were not committed.
+- 164 pytest tests passed locally on Python 3.13 (145 prior + 19 rollback/change-plan regression tests).
+- The new engine imported original TMSH blocks with balanced-brace parsing, generated rollback references for pools, members, servers and VSs, and preserved original Excel report sheets.
+- Generated an example TXT with approval tickets, prechecks, proposed change, postchecks, restore and blocking reasons.
+- Sensitive and missing backups are not exported as full recreate commands; SHA256 manifests detect modified backups.
+- TMSH SSH capture tests use mocks only. Actual BIG-IP SSH, TMOS 17.5.1.11 syntax and operational restore validation are **not** covered by local automated tests.
+- **No configuration changes, deletion or publication to PyPI occurred during testing.**

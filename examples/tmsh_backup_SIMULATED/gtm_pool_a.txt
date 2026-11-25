@@ -1,0 +1,22 @@
+gtm pool a /Common/pool_app {
+    enabled
+    load-balancing-mode round-robin
+    monitor /Common/tcp
+    members {
+        /Common/GDL-F5:/Common/vs_app {
+            enabled
+            member-order 0
+            ratio 1
+        }
+        /Common/QRO-F5:/Common/vs_app_backup {
+            disabled
+            member-order 1
+            ratio 3
+        }
+    }
+}
+gtm pool a /Common/pool_dormant {
+    disabled
+    load-balancing-mode global-availability
+    members none
+}

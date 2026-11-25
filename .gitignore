@@ -30,3 +30,14 @@ FreedIP_*.txt
 # Packaging output
 *.tar.gz
 *.whl
+
+# Restricted change evidence; NEVER commit production backups, approvals or procedures
+DNS_TMSH_Backup*/
+*_TMSH_Backup*/
+Secure_TMSH_Backup*/
+Cleanup_Procedure*.txt
+Approved_Changes*.txt
+*tmsh_backup*/
+*TMSH_Backup*/
+gtm_*.txt
+!examples/tmsh_backup_SIMULATED/gtm_*.txt

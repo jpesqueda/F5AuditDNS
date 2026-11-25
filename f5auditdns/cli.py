@@ -194,15 +194,22 @@ Ninguna opción cambia Verdict ni Approval Status (PENDING).
     )
     p.add_argument("--version", action="version", version=f"F5AuditDNS {__version__}")
     subs = p.add_subparsers(dest="command", required=True)
-    for name in ("validate", "collect", "analyze", "diagram"):
+    for name in ("validate", "collect", "analyze", "diagram", "backup-tmsh"):
         sub = subs.add_parser(name, help={
             "validate": "Check DNS API read permissions / Comprobar permisos API DNS",
             "collect": "Collect a read-only JSON snapshot / Recopilar RAW JSON sin modificar BIG-IP",
             "analyze": "Analyze saved snapshot, export Excel/CSV / Analizar RAW y exportar Excel/CSV",
             "diagram": "Map GSLB topology as offline HTML/JSON / Mapa GSLB interactivo desde RAW",
+            "backup-tmsh": "Capture read-only TMSH list output by SSH / Respaldar TMSH sin cambios",
         }[name], formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog={"validate": validate_examples, "collect": collect_examples,
-                    "analyze": analyze_examples, "diagram": r"""Examples / Ejemplos:
+                    "analyze": analyze_examples, "backup-tmsh": r"""Examples / Ejemplos:
+  f5auditdns backup-tmsh -ho dns01.example.test -u auditor -o .\DNS_TMSH_Backup
+
+Requires OpenSSH, a trusted SSH host key and a read-only account. Stores potentially
+sensitive full TMSH settings locally, separate from the REST RAW snapshot.
+Requiere SSH seguro. El respaldo puede contener secretos: NO subir a GitHub.
+""", "diagram": r"""Examples / Ejemplos:
   f5auditdns diagram --from-raw .\DNS_RAW -o .\GSLB_Map
   f5auditdns --diagram --raw .\DNS_RAW --ltm-raw-dir .\LTM_RAW
   f5auditdns diagram --mock -o .\GSLB_Demo
@@ -220,6 +227,12 @@ Genera JSON y HTML interactivo sin realizar cambios. Los estados son snapshots, 
             sub.add_argument("--timeout", type=int, default=30, help="REST timeout (default 30s) / Timeout REST (30s)")
             sub.add_argument("--page-size", type=int, default=100, help="Objects per REST page (100) / Objetos por página REST (100)")
             sub.add_argument("--provider", default="tmos", help="Authentication provider (tmos) / Proveedor de autenticación (tmos)")
+        if name == "backup-tmsh":
+            sub.add_argument("-ho", "--host", required=True, help="F5 DNS management address / Host DNS")
+            sub.add_argument("-u", "--user", required=True, help="SSH username / Usuario SSH")
+            sub.add_argument("-o", "--out", required=True, help="New confidential backup directory / Carpeta nueva de respaldo")
+            sub.add_argument("--ssh-timeout", type=int, default=120, help="Per-command SSH timeout in seconds / Timeout SSH")
+            sub.add_argument("--core-only", action="store_true", help="Skip optional GTM references / Omitir inventarios opcionales")
         if name == "collect":
             sub.add_argument("-o", "--save-raw", default=None,
                              help="Snapshot directory / Directorio RAW (default: ./f5auditDNS_raw_HOSTNAME_YYYYMMDD_HHMM)")
@@ -248,6 +261,12 @@ Genera JSON y HTML interactivo sin realizar cambios. Los estados son snapshots, 
             sub.add_argument("--freed-ip-file", metavar="FILE",
                              help="Additional explicit FreedIP evidence; merges with --file IPs / "
                                   "Evidencia adicional de IPs decomisionadas, sin aprobación automática")
+            sub.add_argument("--tmsh-backup-dir", metavar="DIR",
+                             help="Secure TMSH all-properties backup used for rollback references / Respaldo TMSH original")
+            sub.add_argument("--approval-file", metavar="TXT",
+                             help="Explicit approved MEMBER/POOL rows with ticket; no execution / Lista de aprobaciones")
+            sub.add_argument("--procedure-txt", metavar="TXT",
+                             help="Write non-executable cleanup procedure TXT / Procedimiento TXT con prechecks y rollback")
             sub.add_argument("--max-snapshot-gap-hours", type=float, default=48, metavar="HOURS",
                              help="Max DNS/LTM age gap (48h) / Diferencia máxima RAW DNS/LTM (48h)")
             sub.add_argument("-o", "--out", default="F5_DNS_Audit.xlsx", help="Output XLSX or CSV directory / Excel o directorio CSV de salida")
@@ -302,6 +321,15 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(levelname)s: %(message)s")
     try:
+        if args.command == "backup-tmsh":
+            from .tmsh_backup import capture_tmsh_ssh
+            if args.ssh_timeout <= 0:
+                raise ValueError("--ssh-timeout must be positive")
+            dest = capture_tmsh_ssh(args.host, args.user, args.out, timeout=args.ssh_timeout,
+                                    include_optional=not args.core_only)
+            print(f"Confidential read-only TMSH backup: {dest}")
+            print("WARNING: all-properties may contain secrets. Never commit or share this directory.")
+            return 0
         if args.command == "validate":
             client = make_client(args)
             results = validate(client)
@@ -432,6 +460,21 @@ def main(argv: list[str] | None = None) -> int:
         audit = analyze(snapshot, ltm_snapshots, args.max_snapshot_gap_hours,
                         ltm_scan=ltm_scan, ltm_coverage_complete=args.ltm_coverage_complete,
                         freed_ips=freed_ips)
+        if args.tmsh_backup_dir:
+            from .tmsh_backup import TmshBackup
+            from .rollback_engine import enrich_rollback
+            backup = TmshBackup(args.tmsh_backup_dir)
+            enrich_rollback(audit, backup)
+            print(f"TMSH backup indexed: {len(backup.blocks)} objects. Rollback requires manual TMOS validation.")
+        if args.approval_file and not args.procedure_txt:
+            raise ValueError("--approval-file requires --procedure-txt")
+        if args.procedure_txt:
+            from .change_plan import parse_approvals, write_change_plan
+            selections = parse_approvals(args.approval_file) if args.approval_file else None
+            out_txt = write_change_plan(audit, args.procedure_txt, selections,
+                                        hostname=str(snapshot.meta.get('host') or ''),
+                                        collected_at=str(snapshot.meta.get('collected_at') or ''))
+            print(f"Non-executable cleanup procedure TXT: {out_txt}")
         if args.format == "csv":
             paths = as_csv(audit, args.out, search_terms=search_terms)
             print(f"Generated {len(paths)} CSV files in {args.out}")

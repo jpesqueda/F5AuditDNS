@@ -1,0 +1,4 @@
+# Explicit external approvals; synthetic data only
+APPROVED|MEMBER|a|/Common/pool_app|/Common/GDL-F5:/Common/vs_app|CHG-12345
+APPROVED|POOL|a|/Common/pool_app||CHG-12345
+PENDING|POOL|a|/Common/pool_dormant||CHG-12346

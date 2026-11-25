@@ -1,0 +1,9 @@
+gtm wideip a /Common/app.empresa.example {
+    enabled
+    pools {
+        /Common/pool_app {
+            order 0
+        }
+    }
+    last-resort-pool /Common/pool_app
+}

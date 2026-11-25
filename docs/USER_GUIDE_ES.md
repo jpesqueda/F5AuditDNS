@@ -199,3 +199,12 @@ Con `f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\G
 ### v0.5.4 Vista enfocada del mapa GSLB
 
 El HTML abre en **Focused View** (un solo Wide IP), con 25 elementos por página en Service Explorer, búsqueda de dependencias, Overview plegado/paginado y **Show Dependencies** en el inspector. No requiere opciones adicionales del CLI ni repetir `collect`. El JSON conserva el inventario completo.
+
+### Rollback TMSH y TXT de cambios (v0.6.0)
+
+1. Captura la configuración original con lectura SSH: `f5auditdns backup-tmsh -ho dns01.example.test -u auditor -o .\DNS_TMSH_Backup`.
+2. Completa el Excel con `--tmsh-backup-dir .\DNS_TMSH_Backup` durante `analyze`.
+3. Selecciona únicamente los cambios aprobados en `Approved_Changes.txt`, como `APPROVED|MEMBER|a|/Common/pool_app|/Common/GDL-F5:/Common/vs_app|CHG-12345`.
+4. Genera el plan TXT con `--approval-file .\Approved_Changes.txt --procedure-txt .\Cleanup_Procedure.txt`.
+
+Los comandos `NOT RUN` son referencias que requieren validación de sintaxis, dependencias, equipo y respaldo. El estado `CAPTURED - VERIFY TMSH SYNTAX` no garantiza una recuperación exacta. El proyecto no borra ni modifica configuraciones. Los respaldos originales pueden contener credenciales; no subirlos a repositorios públicos.

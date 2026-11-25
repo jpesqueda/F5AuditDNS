@@ -14,3 +14,7 @@
 - `diagram.py`, `diagram_html.py` y `diagram_mock.py` producen grafos offline multi-partición y un HTML interactivo sin nuevos endpoints de recolección ni cambios de configuración.
 
 - v0.5.4 agrega Focused View, Service Explorer y paginación (25 elementos), sin modificar los RAW ni el JSON completo.
+
+### v0.6.0
+
+Rollback desde configuración original capturada con TMSH y generación de TXT de procedimiento por aprobación explícita. Siempre READ ONLY. Nunca subir respaldos reales ni secretos a GitHub. Las referencias de recuperación requieren validación manual en el mismo TMOS antes de ejecutarse fuera de la herramienta.
