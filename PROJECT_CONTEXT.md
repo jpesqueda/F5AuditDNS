@@ -20,3 +20,7 @@ See `README.md` and `docs/REFERENCE_ENGINE.md` for CLI and safety guidance.
 - `diagram.py`, `diagram_html.py`, and `diagram_mock.py` provide the offline topology visualization without new collector REST calls. Snapshot health and dynamic reference evidence remain conservative.
 
 - v0.5.4 focused topology uses only offline HTML/JS; pages 25 services and 25 child objects, preserves all canonical graph JSON and collected RAW snapshots.
+
+### v0.6.0 rollback / procedures
+
+The rollback engine optionally ingests confidential `tmsh list ... all-properties` captures via `TmshBackup`, indexes exact full-path object blocks, enriches all existing XLSX sheets with source checksum and non-executed rollback references. `backup-tmsh` runs *only* read-only SSH listing commands with trusted host keys. `--approval-file` plus `--procedure-txt` create a controlled human-run sequence; pool deletion is blocked when active member approvals, Wide IPs or unknown dynamic dependencies remain. NO production/raw/secret data should enter the repository. The graph and existing audit functions remain independent and read-only.

@@ -1,0 +1,10 @@
+gtm server /Common/GDL-F5 {
+    datacenter /Common/DC_GDL
+    virtual-servers {
+        /Common/vs_app {
+            destination /Common/192.0.2.100:443
+            enabled
+        }
+    }
+    virtual-server-discovery disabled
+}

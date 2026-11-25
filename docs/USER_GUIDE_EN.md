@@ -219,3 +219,12 @@ Use `f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\G
 ### v0.5.4 Focused topology UI
 
 The diagram opens in **Focused View** (one Wide IP at a time), with 25-item paging in Service Explorer, cross-object search, a bounded/paginated Overview and inspector **Show Dependencies** to follow shared GSLB resources. No extra CLI flags and no new RAW collection are required. All canonical JSON relationships are preserved.
+
+### TMSH-backed rollback (v0.6.0)
+
+1. Capture complete original TMSH read-only: `f5auditdns backup-tmsh -ho dns01.example.test -u auditor -o .\DNS_TMSH_Backup`.
+2. Produce Excel rollback evidence: `f5auditdns analyze --from-raw .\DNS_RAW --tmsh-backup-dir .\DNS_TMSH_Backup -o .\Audit.xlsx`.
+3. For an approved change, prepare an exact-match `Approved_Changes.txt` manifest containing `APPROVED|MEMBER|a|/Common/pool_app|/Common/GDL-F5:/Common/vs_app|CHG-12345`.
+4. Add `--approval-file .\Approved_Changes.txt --procedure-txt .\Cleanup_Procedure.txt` to generate a **non-executable** change procedure.
+
+`CAPTURED - VERIFY TMSH SYNTAX` indicates a captured object definition, not a successful restoration test. Do not rely on the generated commands as exact without verifying syntax, non-default and inherited settings, object ownership, dependencies, sync group and platform version. Pool removal remains blocked when known dependencies or unapproved members exist. Original TMSH files are confidential; never commit or share them.

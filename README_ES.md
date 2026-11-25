@@ -203,3 +203,26 @@ py -m twine check dist/*
 ```
 
 La publicación a TestPyPI y PyPI se realiza **solo después** de revisar el código, ejecutar las pruebas y validar el comportamiento contra TMOS reales. Consulta [Guía de publicación (ES)](PUBLISHING_GITHUB_ACTIONS_ES.md), [Reference Engine (ES)](REFERENCE_ENGINE_ES.md) y [English user guide](USER_GUIDE_EN.md).
+
+## v0.6.0 — Recuperación TMSH y planes TXT
+
+Consulta read-only de las propiedades originales mediante `f5auditdns backup-tmsh -ho dns01.example.test -u auditor -o .\DNS_TMSH_Backup`.
+
+Después genera los comandos de rollback y el procedimiento de cambio:
+
+```powershell
+f5auditdns analyze --from-raw ".\DNS_RAW" `
+  --tmsh-backup-dir ".\DNS_TMSH_Backup" `
+  --approval-file ".\Approved_Changes.txt" `
+  --procedure-txt ".\Cleanup_Procedure.txt" `
+  -o ".\F5DNS_Cleanup.xlsx"
+```
+
+Formato TXT de aprobaciones:
+
+```text
+APPROVED|MEMBER|a|/Common/pool_app|/Common/GDL-F5:/Common/vs_app|CHG-12345
+APPROVED|POOL|a|/Common/pool_app||CHG-12345
+```
+
+Los comandos de consulta y recuperación son referencias `NOT RUN`; el proyecto NO ejecuta cambios. Un respaldo incompleto o sensible no se considera rollback verificado. No publicar en GitHub los respaldos reales ni los TXT con información de producción.

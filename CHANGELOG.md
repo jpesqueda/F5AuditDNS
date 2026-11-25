@@ -114,3 +114,12 @@ Initial separate F5AuditDNS prototype based on the philosophy (not the full LTM 
 - Simulated dataset and tests.
 
 **Validation status:** local tests and simulated reports only. Not tested against live TMOS.
+
+## 0.6.0 — TMSH-backed rollback and controlled cleanup procedures
+
+- Add `backup-tmsh` read-only SSH capture using trusted OpenSSH host keys. Original configurations are confidential and stay local; BIG-IP is not modified.
+- Add `analyze --tmsh-backup-dir` to enrich every original audit sheet with captured object definitions, SHA256 source evidence, and `NOT RUN` rollback references for GSLB Wide IPs, pools, members, GSLB Servers, virtual servers and Data Centers.
+- Missing, ambiguous, sensitive or unavailable definitions stay `ROLLBACK INCOMPLETE`/manual review. Captured `tmsh list` blocks are **never** claimed as already tested restoration commands.
+- Add `--approval-file` and `--procedure-txt` to export a **non-executable** TXT procedure for selected pools and members: ticket, prechecks, dependencies, proposed change, postchecks, rollback and restore verification.
+- Block proposed pool deletion when any members remain unapproved or a Wide IP/Last Resort/dynamic dependency is present. Approval alone never bypasses safety gates.
+- Preserve existing `collect`, `analyze`, `diagram`, all worksheets, FreedIP and LTM evidence. No production data in tests or examples.

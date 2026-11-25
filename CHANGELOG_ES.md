@@ -58,3 +58,12 @@
 
 - Primeros prototipos de F5AuditDNS: validate/collect/analyze, inventario GSLB A/AAAA/CNAME/MX/NAPTR/SRV, RAW JSON, hojas Excel y comparación manual LTM.
 - Carpeta automática de snapshot con hostname, timestamps, tests y comandos del CLI.
+
+## 0.6.0 — Rollback desde TMSH y procedimientos de cleanup controlado
+
+- Nuevo `backup-tmsh` para consultar configuraciones completas por SSH validado (sin modificar BIG-IP). Los respaldos son confidenciales y locales.
+- `analyze --tmsh-backup-dir` agrega comandos de restauración `NOT RUN` de objetos y miembros a las hojas originales del Excel, con archivo de origen y SHA256.
+- Los respaldos incompletos o sensibles no generan restauraciones afirmadas como exactas: requieren revisión manual y validación de sintaxis TMOS.
+- Nuevos `--approval-file` y `--procedure-txt`: TXT de change control con ticket, prechecks, dependencias, comandos de cambio, postchecks y rollback.
+- Bloqueo preventivo de borrado de pools con miembros pendientes, Wide IPs o dependencias dinámicas. La aprobación no sustituye la validación.
+- Conserva todos los reportes, modos y compatibilidad de RAW anteriores, con pruebas ficticias.

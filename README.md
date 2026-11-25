@@ -202,3 +202,77 @@ Todos los comandos `tmsh` Delete/Modify/Create/Rollback se muestran como **`NOT 
 **Security / Seguridad:** Fictional examples use documentation IP ranges and `example.test` hostnames. Do not upload production RAWs, credentials, tokens, screenshots or infrastructure inventories to GitHub or PyPI. / Los ejemplos usan direcciones documentales y nombres ficticios. No compartas RAW de producción ni datos críticos.
 
 License / Licencia: MIT.
+
+---
+
+## v0.6.0 — TMSH rollback evidence and approved change procedure (English)
+
+**Critical:** The legacy REST snapshot is not a complete rollback backup. You must
+capture the original TMSH configuration before changing GSLB objects. F5AuditDNS
+never executes delete, create, modify or restore operations.
+
+### Step 1: Collect configuration without modifications
+
+```powershell
+f5auditdns backup-tmsh -ho dns01.example.test -u auditor -o ".\DNS_TMSH_Backup"
+```
+
+This command uses your local OpenSSH client, **requires a trusted SSH host key**,
+and runs read-only `tmsh list ... recursive all-properties` commands. Authentication
+uses SSH's own supported prompts/agent. TMSH output can contain secrets: protect
+the backup directory, never upload it to GitHub, PyPI, tickets or public chats.
+If SSH is unavailable, save unmodified `tmsh list` output to files such as
+`gtm_pool_a.txt`, `gtm_wideip_a.txt`, `gtm_server_all.txt` and
+`gtm_datacenter_all.txt` in a private directory. Use UTF-8 when redirecting
+output on Windows. An optional `_tmsh_manifest.json` holds SHA256 checksums.
+
+### Step 2: Generate the enriched Excel and a non-executable change TXT
+
+```powershell
+f5auditdns analyze `
+  --from-raw ".\DNS_RAW" `
+  --ltm-raw-dir ".\LTM_RAW" `
+  --tmsh-backup-dir ".\DNS_TMSH_Backup" `
+  --file ".\freed_ips.txt" `
+  --approval-file ".\Approved_Changes.txt" `
+  --procedure-txt ".\Cleanup_Procedure.txt" `
+  -o ".\F5DNS_Cleanup.xlsx"
+```
+
+The explicitly authorized approval manifest contains **six pipe-separated
+fields** per line. Valid entries:
+
+```text
+# STATUS|TYPE|RECORD_TYPE|POOL_FULLPATH|MEMBER_FULLPATH|CHANGE_TICKET
+APPROVED|MEMBER|a|/Common/pool_app|/Common/GDL-F5:/Common/vs_app|CHG-12345
+APPROVED|POOL|a|/Common/pool_app||CHG-12345
+PENDING|POOL|a|/Common/pool_dormant||CHG-12346
+```
+
+A member approval does **not** authorize deleting its pool. Referenced pools
+remain blocked unless members, Wide IP/Last Resort links and dynamic references
+are independently reviewed. Every proposed command is labeled `NOT RUN`.
+Captured TMSH blocks are marked `CAPTURED - VERIFY TMSH SYNTAX`, **not**
+`EXACT RESTORE`. Sensitive blocks never appear in the Excel or procedure TXT.
+Compare the original backup and the change window's live configuration before
+using any proposed commands in an approved change.
+
+Without an approval list, `--procedure-txt` can produce a **PENDING** simulation
+for FreedIP-marked members and reviewable empty pools. It does not approve them.
+The procedure output will not overwrite an existing file.
+
+## v0.6.0 — Rollback TMSH y procedimiento de cambios (Español)
+
+El RAW REST **no contiene siempre todas las propiedades** para recrear objetos.
+Primero ejecuta `f5auditdns backup-tmsh` con una cuenta de solo lectura y
+resguarda la carpeta de configuración (puede contener secretos). Después usa
+`--tmsh-backup-dir` en `analyze`. Si existe una definición íntegra, el Excel
+mostrará una referencia `NOT RUN: tmsh create` o `NOT RUN: tmsh modify ... add`
+con estado `CAPTURED - VERIFY TMSH SYNTAX`; si no, quedará `ROLLBACK INCOMPLETE`.
+Esto **no significa** que la restauración ya esté validada en el equipo.
+
+El archivo `Approved_Changes.txt` contiene una selección explícita con número
+de ticket. `--procedure-txt` crea un TXT con respaldo, prechecks, revisión de
+referencias, comandos propuestos, postchecks y rollback. Un pool con miembros
+no aprobados, Wide IP o Last Resort sigue `BLOCKED` aunque se incluya la palabra
+`APPROVED`. F5AuditDNS **nunca ejecuta** comandos de cambio.
