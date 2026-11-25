@@ -81,7 +81,7 @@ def test_sensitive_password_omitted_from_excel_reference(tmp_path):
 def test_backs_up_config_hash_enforced(tmp_path):
     content = 'gtm pool a /Common/pool { disabled }\n'
     (tmp_path / 'gtm_pool_a.txt').write_text(content, encoding='utf-8')
-    manifest = {'files': {'gtm_pool_a.txt': {'sha256': hashlib.sha256(content.encode()).hexdigest()}}}
+    manifest = {'files': {'gtm_pool_a.txt': {'sha256': hashlib.sha256((tmp_path / 'gtm_pool_a.txt').read_bytes()).hexdigest()}}}
     (tmp_path / '_tmsh_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
     assert len(TmshBackup(tmp_path).blocks) == 1
     (tmp_path / 'gtm_pool_a.txt').write_text(content+'tampered', encoding='utf-8')
