@@ -1,5 +1,14 @@
 # Registro de cambios
 
+## [0.5.3] — 2026-11-24 (desarrollo, sin publicar)
+
+- Nuevo `diagram --from-raw` y alias `--diagram --raw`, sin repetir colecta.
+- Mapa global multi-partición con Wide IP, pools, miembros, VS, Servers, Data Centers y monitores.
+- Clases de revisión conservadoras ante reglas dinámicas, inventarios incompletos e iQuery no confirmado.
+- Visor HTML interactivo y JSON portable; D3 v7 opcional embebible con `--d3-js`.
+- Documentación bilingüe, pruebas con datos ficticios y ninguna operación BIG-IP de escritura.
+
+
 ## [0.5.2] — 20 noviembre 2026 (desarrollo, sin publicar)
 
 - `analyze --file ARCHIVO` (TXT/CSV/XLSX) resalta celdas amarillas y simula impacto NO aprobado con IPs/endpoints válidos en FreedIP y Pool Impact.

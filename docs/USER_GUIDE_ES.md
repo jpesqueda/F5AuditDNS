@@ -1,6 +1,6 @@
 # F5AuditDNS — Guía de uso (Español)
 
-**Versión de desarrollo:** `0.5.2` | **Python:** 3.9 o superior | **Plataformas:** Windows, Linux y macOS.
+**Versión de desarrollo:** `0.5.3` | **Python:** 3.9 o superior | **Plataformas:** Windows, Linux y macOS.
 
 [Repositorio](https://github.com/jpesqueda/F5AuditDNS) · [English user guide](USER_GUIDE_EN.md)
 
@@ -191,3 +191,7 @@ py -m twine check dist/*
 ```
 
 La publicación a TestPyPI y PyPI se realiza **solo después** de revisar el código, ejecutar las pruebas y validar el comportamiento contra TMOS reales. Consulta [Guía de publicación (ES)](PUBLISHING_GITHUB_ACTIONS_ES.md), [Reference Engine (ES)](REFERENCE_ENGINE_ES.md) y [English user guide](USER_GUIDE_EN.md).
+
+## v0.5.3 — Visualizador de topología GSLB
+
+Con `f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology"` obtienes el HTML interactivo y el grafo JSON sin conectarte al F5. Para practicar usa `--mock`. Consulta [DIAGRAM_GUIDE_ES.md](DIAGRAM_GUIDE_ES.md) para referencias entre particiones, validación de posibles huérfanos, salud operativa y D3.js v7 local.

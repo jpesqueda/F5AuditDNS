@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.3] — 2026-11-24 (development; not published)
+
+- Add offline `diagram --from-raw DIR` mode and `--diagram --raw DIR` alias without changing collector behavior.
+- Add global fullPath-indexed topology graph across partitions, preserving Direct and Last Resort Wide IP references, shared Pool Members, GSLB VS, Servers, Data Centers, and health-monitor dependencies.
+- Add conservative orphan/review classification and snapshot-only health propagation; do not infer iQuery outages from missing telemetry.
+- Export portable `gtm_topology.json` and an interactive horizontal HTML tree with Bézier links, zoom/pan, search, partition/status filters, object inspector, sanitized REST JSON and NOT RUN references.
+- Add synthetic `--mock` with three partitions, optional LTM inventory evidence, `--format`, `--open`, `--no-raw-inspector` and `--d3-js` for embedding local D3 v7.
+- Preserve all original analysis/Excel functions; add bilingual diagram documentation and regression tests.
+
 ## [0.5.2] — 2026-11-20 (development; not published)
 
 - A single repeatable `analyze --file FILE` (TXT/CSV/XLSX) now highlights yellow and uses valid IP/endpoint entries for unapproved FreedIP/Pool Impact simulation.

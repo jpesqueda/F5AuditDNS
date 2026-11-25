@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "f5auditdns"
-version = "0.5.2"
+version = "0.5.3"
 description = "Read-only, evidence-first audit for F5 BIG-IP DNS GSLB with offline JSON snapshots and Excel/CSV reports"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -34,6 +34,9 @@ f5auditdns = "f5auditdns.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["f5auditdns*"]
+
+[tool.setuptools.package-data]
+f5auditdns = ["static/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

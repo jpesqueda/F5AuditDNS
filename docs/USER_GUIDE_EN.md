@@ -1,6 +1,6 @@
 # F5AuditDNS — Read-only BIG-IP DNS / GSLB Cleanup Auditor
 
-**Version:** `0.5.2` (development package; not yet published to PyPI)  
+**Version:** `0.5.3` (development package; not yet published to PyPI)  
 **Requirements:** Python 3.9+, Windows / Linux / macOS  
 **Project:** https://github.com/jpesqueda/F5AuditDNS
 
@@ -41,7 +41,7 @@ py -m pytest -q
 
 The package keeps the original `requests`, `openpyxl` and `pytest` (dev-only) dependencies.
 
-## Offline object search and yellow highlighting (v0.5.2)
+## Offline object search and yellow highlighting (v0.5.3)
 
 Search the **existing RAW** using any of these optional `analyze` flags. No new
 collection or BIG-IP connection is necessary:
@@ -194,7 +194,7 @@ py -m build
 py -m twine check dist/*
 ```
 
-GitHub Actions workflows for CI, TestPyPI and PyPI remain in `.github/workflows`. A PyPI release must be tagged only after all relevant tests pass and a reviewer verifies real-world TMOS compatibility. Version `0.5.2` has not been published by this project package.
+GitHub Actions workflows for CI, TestPyPI and PyPI remain in `.github/workflows`. A PyPI release must be tagged only after all relevant tests pass and a reviewer verifies real-world TMOS compatibility. Version `0.5.3` has not been published by this project package.
 
 ## Limitations
 
@@ -211,3 +211,7 @@ F5 BIG-IP iControl REST endpoint reference: https://clouddocs.f5.com/api/icontro
 F5 BIG-IP TMOS concepts and command reference: https://clouddocs.f5.com/cli/tmsh-reference/latest/
 
 License: MIT. `NOTICE.md` retains attribution for the inherited REST client.
+
+## v0.5.3 — GSLB topology browser
+
+Use `f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology"` to generate the interactive HTML and the JSON graph without contacting the F5 again. Use `--mock` for a device-free demonstration. Read [DIAGRAM_GUIDE_EN.md](DIAGRAM_GUIDE_EN.md) for multi-partition reference handling, orphan evidence safeguards, health limitations, and local D3.js v7 embedding.

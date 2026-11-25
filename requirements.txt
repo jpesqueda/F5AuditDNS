@@ -1,2 +1,4 @@
 requests>=2.25
 openpyxl>=3.0
+# Optional test dependency: pytest>=7
+# The diagram viewer is plain HTML/JavaScript and needs no Python web framework.

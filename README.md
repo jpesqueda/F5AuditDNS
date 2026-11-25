@@ -1,6 +1,6 @@
 # F5AuditDNS — BIG-IP DNS/GSLB Audit & Cleanup Review
 
-**Development version 0.5.2** · Python 3.9+ · Windows / Linux / macOS · **READ ONLY**
+**Development version 0.5.3** · Python 3.9+ · Windows / Linux / macOS · **READ ONLY**
 
 **Language / Idioma:** [English](#english) | [Español](#español)
 
@@ -9,6 +9,12 @@
 ---
 
 ## English
+
+### New: interactive GSLB topology diagram (v0.5.3)
+
+After `collect`, run `f5auditdns diagram --from-raw ".\DNS_RAW" -o ".\GSLB_Topology"`. The alias `f5auditdns --diagram --raw ".\DNS_RAW"` also works. It generates `gtm_topology.json` and `f5_dns_topology.html`, including cross-partition connections, health evidence and conservative orphan review. For a device-free demo use `f5auditdns diagram --mock -o .\Demo`. Full instructions: [Diagram guide (EN)](docs/DIAGRAM_GUIDE_EN.md).
+
+For a self-contained HTML **embedding the actual D3.js v7 bundle**, supply `--d3-js .\d3.v7.min.js`. Without it, the HTML is still fully interactive offline using the included SVG renderer; when served over HTTP(S), it may use D3 from the official CDN. No source RAW files or passwords are sent to a web service by diagram generation.
 
 ### What does F5AuditDNS do?
 
@@ -89,6 +95,12 @@ All `tmsh` Delete/Modify/Create/Rollback commands in the report are **`NOT RUN` 
 ---
 
 ## Español
+
+### Nuevo: diagrama interactivo de topología GSLB (v0.5.3)
+
+Después de `collect`, ejecuta `f5auditdns diagram --from-raw ".\DNS_RAW" -o ".\GSLB_Topology"`. También funciona `f5auditdns --diagram --raw ".\DNS_RAW"`. Genera el JSON del grafo y un HTML con árbol horizontal, relaciones entre particiones, estados, referencias y revisión de posibles objetos sin uso conocido. Demo sin F5: `f5auditdns diagram --mock -o .\Demo`. Consulta la [Guía de diagramas (ES)](docs/DIAGRAM_GUIDE_ES.md).
+
+Para incluir D3.js v7 dentro del HTML, utiliza `--d3-js .\d3.v7.min.js` con un archivo obtenido del proveedor. Sin él, el visor funciona offline mediante SVG; si lo abres desde HTTP(S), puede intentar usar el CDN oficial. Ningún modo de diagrama ejecuta modificaciones ni se conecta al F5 para consultar la captura.
 
 ### ¿Para qué sirve F5AuditDNS?
 
