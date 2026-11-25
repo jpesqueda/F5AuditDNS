@@ -4,3 +4,6 @@ recursive-include examples *.json *.py *.txt *.csv
 recursive-include tests *.py
 exclude *.xlsx
 recursive-exclude f5auditdns __pycache__ *.pyc
+
+recursive-include f5auditdns/static *.html
+include requirements.txt

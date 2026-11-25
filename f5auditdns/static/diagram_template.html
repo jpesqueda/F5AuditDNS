@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>F5AuditDNS | GSLB Topology</title>
+<style>
+:root{--bg:#080e19;--panel:#0d1726;--panel2:#132238;--line:#253a51;--muted:#8ca2ba;--text:#eaf2fc;--accent:#5bc4f4;--green:#3ed7a0;--red:#ff687c;--amber:#f9c86e;--gray:#9aafbf;--blue:#71adff;--purple:#bc99ef}*{box-sizing:border-box}
+body{margin:0;font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
+button,input,select{font:inherit}button,select,input{background:#132238;color:var(--text);border:1px solid #34506e;border-radius:8px;padding:8px 11px}button{cursor:pointer}button:hover{background:#223754;border-color:#5bc4f4}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent)}input{min-width:190px}button.active{background:#24465d;border-color:#49b5e8}
+.shell{height:100dvh;min-height:650px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}
+.header{display:flex;align-items:center;gap:18px;justify-content:space-between;padding:14px 21px;background:#0b1728;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px}.brand-icon{width:42px;height:42px;background:linear-gradient(150deg,#0360a3,#1d3455);border:1px solid #327da6;display:grid;place-items:center;border-radius:12px;font-size:22px}.brand h1{margin:0;font-size:18px;font-weight:750;letter-spacing:.2px}.brand small{color:#9cb8d2}.header-right{display:flex;gap:12px;align-items:center}.pill{padding:5px 10px;border:1px solid #436378;border-radius:30px;color:#b9d6ea;font-size:11px;letter-spacing:.5px}.pill.safe{color:#8be5c1;border-color:#247154;background:#103c33}
+.toolbar{padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#101d2f;border-bottom:1px solid var(--line)}.toolbar label{display:flex;gap:6px;align-items:center;color:#b2c4d7}.toolspacer{flex:1}.filter-btn{padding:7px 10px;font-size:12px}.toolbar input{min-width:220px;max-width:330px;flex:1}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}.canvas{position:relative;min-width:0;background-color:#091323;background-image:radial-gradient(#284058 0.75px,transparent 0.75px);background-size:22px 22px;overflow:hidden}.canvas>svg{width:100%;height:100%;touch-action:none;cursor:grab}.canvas>svg:active{cursor:grabbing}.floating{position:absolute;top:16px;left:16px;display:flex;gap:8px;flex-wrap:wrap;max-width:calc(100% - 30px);pointer-events:none}.stat{background:#0f2035ea;border:1px solid #25435d;border-radius:11px;padding:9px 13px;min-width:102px;box-shadow:0 6px 20px #0004}.stat b{display:block;font-size:18px}.stat span{font-size:11px;color:#a2b8ce}.mapcontrols{position:absolute;bottom:18px;left:17px;display:flex;gap:5px;background:#132337;border:1px solid #28475b;padding:5px;border-radius:9px}.mapcontrols button{padding:7px 11px}.hint{position:absolute;right:14px;bottom:17px;color:#a3b5c7;background:#0c1b2ddb;border:1px solid #20344a;border-radius:8px;padding:9px}
+.inspector{border-left:1px solid #31465c;background:#101b2b;overflow:auto;min-width:0}.inspect-head{padding:22px 18px 15px;border-bottom:1px solid #29405a}.eyebrow{font-size:11px;font-weight:800;letter-spacing:1.6px;color:#6ebce5}.inspect-head h2{margin:7px 0 8px;font-size:17px;line-height:1.4;overflow-wrap:anywhere}.muted{color:var(--muted)}.status{border-radius:6px;padding:4px 9px;display:inline-block;font-size:11px;font-weight:750;border:1px solid #54697b}.status[data-health="AVAILABLE"]{background:#113a2e;color:#4fe9af;border-color:#248f65}.status[data-health="OFFLINE"],.status[data-health="UNAVAILABLE"]{background:#45202a;color:#ff93a3;border-color:#a74859}.status[data-health="DEGRADED"]{background:#4c391d;color:#ffda87;border-color:#b7823e}.status[data-health="DISABLED"]{background:#29303d;color:#bac2cb}.status[data-health="UNKNOWN"],.status[data-health="NOT OBSERVED"]{background:#1e2b41;color:#9bb7d7}
+.tabs{display:flex;border-bottom:1px solid #283e53;gap:5px;padding:9px 15px 0}.tabs button{background:transparent;border:0;border-radius:0;border-bottom:2px solid transparent;color:#a3b9d1}.tabs button.active{border-color:var(--accent);color:#e4f8ff}.inspect-body{padding:14px 17px 22px}.field{padding:9px 0;border-bottom:1px solid #243951}.field label{display:block;color:#8da7c1;text-transform:uppercase;font-weight:650;letter-spacing:.7px;font-size:10px;margin-bottom:4px}.field .value{overflow-wrap:anywhere;white-space:pre-wrap}.refs{margin:6px 0 0;padding-left:20px;line-height:1.5}.refs li{margin:8px 0;color:#b9cde0}.code{padding:11px;background:#081422;border:1px solid #2e4966;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;color:#9cd6ea;user-select:text}.warn{color:#f4ca7f}.inspect-body pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:#0a1522;padding:12px;border-radius:10px;border:1px solid #243e52;line-height:1.45}.inspect-body h3{font-size:12px;color:#d1e4f7;margin:17px 0 7px}.empty{padding:30px;color:#8297ad}.footer{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#0b1524;border-top:1px solid #243951;color:#94aac0;padding:9px 17px;font-size:11px}.legend{display:inline-flex;gap:15px;align-items:center}.dot{display:inline-block;height:9px;width:9px;border-radius:50%;margin-right:4px}.warning-button{font-size:11px;padding:4px 8px;color:#efcb8f}.warnings{position:absolute;left:17px;bottom:70px;max-height:34%;overflow:auto;background:#201e25f5;border:1px solid #835e39;padding:12px;border-radius:10px;max-width:550px;display:none;box-shadow:0 15px 30px #0008}.warnings.show{display:block}.warnings p{margin:7px 0;color:#f1d5aa;overflow-wrap:anywhere}
+.link{fill:none;stroke:#536b82;stroke-width:1.7;opacity:.8}.link.down{stroke:#ed5c72;stroke-width:2.7;opacity:1}.link.degraded{stroke:#e9ba59;stroke-width:2.6;opacity:1}.node{cursor:pointer}.node .halo{stroke-width:1.8;fill:#101e31}.node text{fill:#e8f1fb;font:12px system-ui,Arial;paint-order:stroke;stroke:#07111e;stroke-width:2px;stroke-linejoin:round}.node .sub{fill:#9bb7cd;font-size:10px}.node.selected .halo{stroke:#82d8fd;stroke-width:3;filter:drop-shadow(0 0 5px #57c3ef)}.node .toggle{fill:#1a3044;stroke:#6f9dbc;stroke-width:1}.node .toggle-label{font:bold 13px system-ui;fill:#e2f4ff;stroke:none;text-anchor:middle;pointer-events:none}.flag{font-size:10px;color:#e4b66b}
+@media(max-width:1000px){.main{grid-template-columns:minmax(0,1fr) 315px}.header-right .pill:last-child{display:none}.toolbar input{min-width:150px}.hint{display:none}}
+@media(max-width:700px){.shell{height:auto;min-height:100dvh;grid-template-rows:auto auto minmax(490px,63vh) minmax(300px,1fr) auto}.main{display:contents}.inspector{border-left:0;border-top:1px solid var(--line);max-height:55vh}.brand h1{font-size:15px}.toolbar{gap:6px}.stat{min-width:70px;padding:6px}.stat b{font-size:14px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="header">
+ <div class="brand"><div class="brand-icon">◈</div><div><h1>F5AuditDNS <span style="color:#5bc4f4;font-weight:500">/ GSLB Topology</span></h1><small id="subtitle">Offline snapshot · Internal NetOps map</small></div></div>
+ <div class="header-right"><span class="pill safe">● READ ONLY / NO CHANGES</span><span class="pill" id="timestamp">Snapshot</span></div>
+</header>
+<div class="toolbar">
+ <label>Partition <select id="partition"><option value="all">All partitions</option></select></label>
+ <input id="search" placeholder="Find FQDN, IP, server, DC, monitor…" aria-label="Search topology" autocomplete="off">
+ <div class="toolspacer"></div>
+ <button class="filter-btn active" data-filter="all">All</button><button class="filter-btn" data-filter="available">Online</button><button class="filter-btn" data-filter="issues">Degraded / Offline</button><button class="filter-btn" data-filter="orphans">Audit / Unlinked</button>
+ <button id="expand-all" title="Expand all visible branches">Expand</button><button id="collapse-all" title="Collapse service details">Collapse</button>
+</div>
+<div class="main">
+<div class="canvas">
+ <svg id="topology" role="img" aria-label="Interactive GSLB topology diagram"><g id="viewport"></g></svg>
+ <div class="floating" id="stats"></div>
+ <div class="mapcontrols"><button id="zoom-in" title="Zoom in">＋</button><button id="zoom-out" title="Zoom out">−</button><button id="fit" title="Fit topology">Fit</button><button id="reset" title="Reset view">Reset</button><button id="export" title="Export portable topology JSON">JSON ↓</button><button id="warning-button" class="warning-button">Warnings</button></div>
+ <div id="warnings" class="warnings" role="status"></div>
+ <div class="hint" id="renderer-label">Pan · Zoom · Click to inspect · ⊕ to expand</div>
+</div>
+<aside class="inspector">
+ <div class="inspect-head"><div class="eyebrow">OBJECT INSPECTOR</div><h2 id="inspect-title">Select any node</h2><span class="status" id="inspect-status" data-health="NOT OBSERVED">NOT OBSERVED</span><p class="muted" id="inspect-subtitle">View object details, evidence and sanitized REST JSON.</p></div>
+ <div class="tabs"><button class="active" data-tab="details">Details</button><button data-tab="raw">REST JSON</button><button data-tab="references">References</button></div>
+ <div class="inspect-body" id="inspect-content"></div>
+</aside>
+</div>
+<footer class="footer"><span><strong>Evidence:</strong> offline configuration and collected REST stats, NOT live traffic.</span><span class="legend"><span><i class="dot" style="background:#42d9a3"></i>Available</span><span><i class="dot" style="background:#f9c86e"></i>Degraded</span><span><i class="dot" style="background:#ff687c"></i>Offline</span><span><i class="dot" style="background:#9aafbf"></i>Unknown / Disabled</span></span><span id="engine" style="margin-left:auto">Renderer</span></footer>
+</div>
+<script type="application/json" id="topology-data">__INLINE_DATA__</script>
+<!-- D3.js v7 loads when network access is allowed. A complete offline SVG
+     tree renderer is included below so the HTML remains independently usable. -->
+<script id="bundled-d3">__D3_SOURCE__</script>
+<script>
+// Avoid network requests when the HTML is opened from disk. For an internal
+// HTTP(S) server, try D3.js v7 from its official URL unless it was bundled.
+// A native offline tree engine remains available if the CDN is blocked.
+if (location.protocol !== 'file:' && typeof window.d3 === 'undefined') {
+  document.write('<script src="https://d3js.org/d3.v7.min.js"><\/script>');
+}
+</script>
+<script>
+'use strict';
+(function(){
+const DATA=JSON.parse(document.getElementById('topology-data').textContent);
+const byId=new Map(DATA.nodes.map(n=>[n.id,n]));
+const mainSVG=document.getElementById('topology');const view=document.getElementById('viewport');
+const NS='http://www.w3.org/2000/svg';let selected=null,activeFilter='all',activeTab='details',collapsed=new Set(),transform={x:150,y:80,k:0.83};
+let lastLayout={nodes:[],links:[],width:1200,height:600};let d3zoom=null;
+const d3ready=typeof window.d3==='object'&&typeof window.d3.tree==='function';
+document.getElementById('renderer-label').textContent=d3ready?'D3 v7 · Pan · Zoom · Click to inspect':'Offline SVG engine · Pan · Zoom · Click to inspect';
+document.getElementById('engine').textContent=d3ready?'D3.js v7':'Offline SVG fallback';
+const palette={AVAILABLE:'#3ed7a0',DEGRADED:'#f9c86e',OFFLINE:'#ff687c',UNAVAILABLE:'#ff687c',DISABLED:'#8d98a9',UNKNOWN:'#8cabc7','NOT OBSERVED':'#8196ab'};
+const kindColor={DEVICE:'#80c8fc',PARTITION:'#aa9cea',BRANCH:'#b3beca',WIDE_IP:'#66d8ec',POOL:'#54bde0',POOL_MEMBER:'#bb99f2',VIRTUAL_SERVER:'#8faeff',GSLB_SERVER:'#f0bc81',DATA_CENTER:'#d59cf1',MONITOR:'#81d5be',IRULE:'#e3b26c',TOPOLOGY:'#e3b26c'};
+const nodeColor=n=>palette[n.health]||kindColor[n.kind]||'#8cabc7';
+const liveMeta=DATA.metadata;document.getElementById('subtitle').textContent=(liveMeta.device||'BIG-IP DNS')+' · '+(liveMeta.tmosProduct||'BIG-IP')+' '+(liveMeta.tmosVersion||'')+' · '+(DATA.summary.partitions||0)+' partition(s) · Snapshot offline';
+document.getElementById('timestamp').textContent=(liveMeta.collectedUTC||'Timestamp unavailable').replace('T',' ').slice(0,19)+' UTC';
+const partSelect=document.getElementById('partition');for(const p of DATA.tree.children||[]){const op=document.createElement('option');op.value=p.partition;op.textContent=p.partition;partSelect.appendChild(op);}
+for(const [value,label] of [['wideIPs','Wide IPs'],['pools','GSLB Pools'],['poolMembers','Pool Members'],['virtualServers','Virtual Servers'],['reviewObjects','Review Items']]){
+ const el=document.createElement('div');el.className='stat';const num=document.createElement('b');num.textContent=DATA.summary[value]??'0';const name=document.createElement('span');name.textContent=label;el.append(num,name);document.getElementById('stats').appendChild(el);}
+const warnings=document.getElementById('warnings');const warningList=DATA.warnings||[];document.getElementById('warning-button').textContent='Warnings ('+warningList.length+')';
+for(const w of warningList){const p=document.createElement('p');p.textContent='⚠ '+w;warnings.appendChild(p);}
+function el(name,attrs={},text){const x=document.createElementNS(NS,name);Object.entries(attrs).forEach(([k,v])=>x.setAttribute(k,String(v)));if(text!==undefined)x.textContent=String(text);return x;}
+function chainKey(node,ancestor=''){return ancestor+'|'+node.kind+'|'+node.id+'|'+(node.relation||'');}
+function toFiltered(node,parentKey='',depth=0){
+ const key=chainKey(node,parentKey);const original=byId.get(node.id);const query=document.getElementById('search').value.trim().toLowerCase();
+ const kind=node.kind||'';const base=(node.label||'')+' '+(node.fullPath||'')+' '+(original?.ip||'')+' '+(original?.ltmLocation||'')+' '+(original?.statusReason||'')+' '+(original?.raw?.destination||'');
+ const ownMatch=!query||base.toLowerCase().includes(query);
+ const filterMatch=activeFilter==='all'||(activeFilter==='orphans'?(key.includes('branch|audit|')||original?.reviewRequired):activeFilter==='available'?node.health==='AVAILABLE':(['DEGRADED','OFFLINE','UNAVAILABLE'].includes(node.health)));
+ const children=(node.children||[]).map(c=>toFiltered(c,key,depth+1)).filter(Boolean);
+ const structural=['DEVICE','PARTITION','BRANCH'].includes(kind);
+ const include=(ownMatch&&filterMatch)||children.length>0||(query===''&&activeFilter==='all');
+ if(!include)return null;
+ const isCollapsed=collapsed.has(key)||(depth>=4&&!collapsed.has('expanded|'+key)&&!query&&activeFilter==='all');
+ return {...node,_key:key,_filteredChildren:children,_children:isCollapsed?[]:children,_hiddenCount:isCollapsed?children.length:0};
+}
+function forest(){const select=partSelect.value;const root={...DATA.tree,children:(DATA.tree.children||[]).filter(x=>select==='all'||x.partition===select)};return toFiltered(root);}
+function layoutNative(root){
+ const nodes=[],links=[];let nextY=0;let maxDepth=0;
+ function walk(n,depth,parent){const kids=n._children||[];maxDepth=Math.max(maxDepth,depth);const wrapped={data:n,depth,parent,children:[]};
+   for(const c of kids)wrapped.children.push(walk(c,depth+1,wrapped));
+   if(!wrapped.children.length)wrapped.x=nextY++*56;else wrapped.x=(wrapped.children[0].x+wrapped.children[wrapped.children.length-1].x)/2;
+   wrapped.y=depth*248;nodes.push(wrapped);if(parent)links.push({source:parent,target:wrapped});return wrapped;}
+ walk(root,0,null);return {nodes,links,width:(maxDepth+1)*248,height:Math.max(560,(nextY+1)*56)};
+}
+function layoutD3(root){const r=d3.hierarchy(root,n=>n._children||[]);const t=d3.tree().nodeSize([56,248]);t(r);const nodes=r.descendants().map(d=>({data:d.data,x:d.x,y:d.y,depth:d.depth}));
+ const links=r.links().map(d=>({source:{x:d.source.x,y:d.source.y,data:d.source.data},target:{x:d.target.x,y:d.target.y,data:d.target.data}}));
+ const min=Math.min(0,...nodes.map(n=>n.x));for(const node of nodes)node.x-=min;for(const line of links){line.source.x-=min;line.target.x-=min;}
+ return {nodes,links,width:Math.max(850,...nodes.map(n=>n.y+250)),height:Math.max(540,...nodes.map(n=>n.x+90))};}
+function setTransform(){view.setAttribute('transform',`translate(${transform.x},${transform.y}) scale(${transform.k})`);}
+function linkType(d){const s=d.source.data?.health,t=d.target.data?.health;if(s==='OFFLINE'||t==='OFFLINE'||s==='UNAVAILABLE'||t==='UNAVAILABLE')return 'down';if(s==='DEGRADED'||t==='DEGRADED')return 'degraded';return '';}
+function draw(){view.replaceChildren();const tree=forest();if(!tree){const t=el('text',{x:90,y:140,fill:'#a7b5c8','font-size':16},'No matching objects');view.appendChild(t);return;}
+ lastLayout=d3ready?layoutD3(tree):layoutNative(tree);
+ for(const link of lastLayout.links){const a=link.source,b=link.target;const mid=(a.y+b.y)/2;
+  view.appendChild(el('path',{d:`M${a.y},${a.x} C${mid},${a.x} ${mid},${b.x} ${b.y},${b.x}`,class:'link '+linkType(link)}));}
+ for(const n of lastLayout.nodes){const data=n.data;const original=byId.get(data.id);const g=el('g',{class:'node'+(data.id===selected?' selected':''),transform:`translate(${n.y},${n.x})`,role:'button','aria-label':(data.label||'')+' '+(data.health||'')});
+  g.appendChild(el('circle',{r:data.kind==='DEVICE'?11:8,cx:0,cy:0,class:'halo',stroke:nodeColor(data),fill:kindColor[data.kind]||'#102238'}));
+  if(data.health==='AVAILABLE')g.appendChild(el('circle',{r:3.2,fill:'#42dfa9',cx:0,cy:0}));
+  if(data.kind==='PARTITION')g.appendChild(el('rect',{x:-11,y:-11,width:22,height:22,rx:4,fill:'none',stroke:'#b59af5','stroke-width':1.4}));
+  const label=data.label||'';const short=label.length>39?label.slice(0,36)+'…':label;
+  g.appendChild(el('text',{x:17,y:-4},short));
+  let secondary=[data.recordType||'',data.kind.replaceAll('_',' '),data.crossPartition?'CROSS-PARTITION':''].filter(Boolean).join(' · ');
+  g.appendChild(el('text',{x:17,y:12,class:'sub'},secondary.slice(0,64)));
+  if((data._filteredChildren?.length||0)>0){const tx=0,ty=0;const toggle=el('g',{transform:`translate(${tx},${ty})`});const circle=el('circle',{r:10,cx:0,cy:0,class:'toggle'});circle.setAttribute('opacity','0.01');toggle.appendChild(circle);
+   const badge=el('circle',{r:7.2,cx:-15,cy:0,class:'toggle'});toggle.appendChild(badge);
+   toggle.appendChild(el('text',{x:-15,y:4,class:'toggle-label'},data._hiddenCount?'+':'−'));toggle.style.cursor='pointer';
+   toggle.addEventListener('click',e=>{e.stopPropagation();if(data._hiddenCount){collapsed.delete(data._key);collapsed.add('expanded|'+data._key)}else{collapsed.add(data._key);collapsed.delete('expanded|'+data._key)}draw();});g.appendChild(toggle);}
+  g.addEventListener('click',()=>{selected=data.id;renderInspector();draw();});
+  view.appendChild(g);}
+ setTransform();}
+function fit(){const box=document.querySelector('.canvas').getBoundingClientRect();const k=Math.max(.16,Math.min(1.05,Math.min((box.width-170)/(lastLayout.width+50),(box.height-100)/(lastLayout.height+80))));transform={x:55,y:60,k};setTransform();}
+function zoomBy(f){transform.k=Math.max(.12,Math.min(3.8,transform.k*f));setTransform();}
+function startD3Pan(){const zoom=d3.zoom().scaleExtent([.12,3.8]).on('zoom',e=>{const t=e.transform;transform={x:t.x,y:t.y,k:t.k};setTransform()});d3zoom=zoom;d3.select(mainSVG).call(zoom).on('dblclick.zoom',null);
+ // Reuse our own zoom controls while preserving D3's gesture behavior.
+}
+function startNativePan(){let moving=false,lastX=0,lastY=0;mainSVG.addEventListener('pointerdown',e=>{if(e.target.closest('.node'))return;moving=true;lastX=e.clientX;lastY=e.clientY;mainSVG.setPointerCapture(e.pointerId)});
+ mainSVG.addEventListener('pointermove',e=>{if(!moving)return;transform.x+=e.clientX-lastX;transform.y+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;setTransform()});
+ mainSVG.addEventListener('pointerup',()=>moving=false);mainSVG.addEventListener('wheel',e=>{e.preventDefault();zoomBy(e.deltaY<0?1.12:.89)},{passive:false});}
+function updateTransform(){setTransform();if(d3zoom){d3.select(mainSVG).call(d3zoom.transform,d3.zoomIdentity.translate(transform.x,transform.y).scale(transform.k))}}
+function divField(label,value){const x=document.createElement('div');x.className='field';const l=document.createElement('label');l.textContent=label;const v=document.createElement('div');v.className='value';v.textContent=value==null||value===''?'—':String(value);x.append(l,v);return x;}
+function appendCode(container,text){const pre=document.createElement('div');pre.className='code';pre.textContent=text;container.appendChild(pre);const b=document.createElement('button');b.textContent='Copy reference';b.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(text);b.textContent='Copied';}catch(e){b.textContent='Copy unavailable';}});container.appendChild(b);}
+function renderInspector(){const root=document.getElementById('inspect-content');root.replaceChildren();const n=byId.get(selected);document.getElementById('inspect-title').textContent=n?n.name:'Select any node';const status=document.getElementById('inspect-status');status.textContent=n?.effectiveHealth||'NOT OBSERVED';status.setAttribute('data-health',n?.effectiveHealth||'NOT OBSERVED');
+ document.getElementById('inspect-subtitle').textContent=n?(n.kind.replaceAll('_',' ')+' · '+n.partition):'View object details, evidence and sanitized REST JSON.';
+ if(!n){const text=document.createElement('p');text.className='empty';text.textContent='Select a Wide IP, pool, member, server, monitor, or audit object to inspect its captured configuration.';root.appendChild(text);return;}
+ if(activeTab==='raw'){const note=document.createElement('p');note.className='muted';note.textContent='Sanitized JSON from the local RAW snapshot. Credentials and opaque rule bodies are omitted; missing properties cannot be inferred.';root.appendChild(note);
+ const pre=document.createElement('pre');pre.textContent=JSON.stringify(n.raw,null,2);root.appendChild(pre);return;}
+ if(activeTab==='references'){
+ root.appendChild(divField('Reference count',n.referenceCount));root.appendChild(divField('Reference review',n.orphanStatus));
+ const refs=document.createElement('ul');refs.className='refs';for(const r of n.references||[]){const item=document.createElement('li');item.textContent=r.source+' ['+r.relation+' / '+r.certainty+']';refs.appendChild(item);}if(!refs.children.length)refs.appendChild(Object.assign(document.createElement('li'),{textContent:'No incoming verified links recorded; this does NOT establish decommission.'}));root.appendChild(refs);return;}
+ for(const [key,val] of [['fullPath',n.fullPath],['Partition',n.partition],['Object type',n.kind.replaceAll('_',' ')],['Record type',n.recordType],['Observed health',n.health],['Effective health (derived if applicable)',n.effectiveHealth],['Health source',n.healthSource],['Status reason',n.statusReason],['Administrative config',n.config],['GSLB method',n.method],['Monitor',n.monitor],['iQuery evidence',n.iquery],['Virtual Server Discovery',n.virtualServerDiscovery],['LTM Location',n.ltmLocation],['LTM Health',n.ltmHealth],['LTM Comparison',n.ltmComparison],['Reference classification',n.orphanStatus],['Number of incoming references',n.referenceCount]])root.appendChild(divField(key,val));
+ const h=document.createElement('h3');h.textContent='SAFE CHANGE REFERENCE — NEVER EXECUTED';root.appendChild(h);appendCode(root,n.deleteReference||'No command reference');
+ const warn=document.createElement('p');warn.className='warn';warn.textContent='PENDING REVIEW. An orphan finding alone does not authorize deletion. Preserve full tmsh list all-properties and validate DR, iRules, Topology and iQuery before any change.';root.appendChild(warn);}
+for(const tab of document.querySelectorAll('[data-tab]'))tab.addEventListener('click',()=>{activeTab=tab.dataset.tab;document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderInspector()});
+for(const f of document.querySelectorAll('[data-filter]'))f.addEventListener('click',()=>{activeFilter=f.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===f));draw();fit();updateTransform()});
+for(const id of ['partition','search'])document.getElementById(id).addEventListener(id==='search'?'input':'change',()=>{draw();fit();updateTransform()});
+document.getElementById('expand-all').addEventListener('click',()=>{collapsed.clear();function walk(n,path=''){const key=chainKey(n,path);collapsed.add('expanded|'+key);(n.children||[]).forEach(x=>walk(x,key));}walk(DATA.tree);draw();fit();updateTransform()});
+document.getElementById('collapse-all').addEventListener('click',()=>{collapsed.clear();draw();fit();updateTransform()});
+document.getElementById('zoom-in').addEventListener('click',()=>{zoomBy(1.2);updateTransform()});document.getElementById('zoom-out').addEventListener('click',()=>{zoomBy(1/1.2);updateTransform()});
+document.getElementById('fit').addEventListener('click',()=>{fit();updateTransform()});document.getElementById('reset').addEventListener('click',()=>{transform={x:150,y:80,k:.83};updateTransform()});
+document.getElementById('warning-button').addEventListener('click',()=>warnings.classList.toggle('show'));
+document.getElementById('export').addEventListener('click',()=>{const payload=JSON.stringify(DATA,null,2);const blob=new Blob([payload],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.download='gtm_topology.json';a.href=url;a.click();URL.revokeObjectURL(url)});
+if(d3ready)startD3Pan();else startNativePan();draw();fit();updateTransform();renderInspector();
+})();
+</script>
+</body>
+</html>

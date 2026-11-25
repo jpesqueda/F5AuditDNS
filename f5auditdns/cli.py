@@ -1,4 +1,4 @@
-"""Command line interface: validate, collect and analyze BIG-IP DNS configuration."""
+"""Command line interface: validate, collect, analyze and diagram BIG-IP DNS."""
 from __future__ import annotations
 
 import argparse
@@ -18,6 +18,9 @@ from .collector import Collector, Snapshot, SnapshotError, validate
 from .report import as_csv, as_excel
 from .freedip import load_freed_ips
 from .search import load_search_terms
+from .diagram import build_diagram, write_diagram_json
+from .diagram_html import render_diagram_html
+from .diagram_mock import mock_snapshot
 
 
 # Keep the default folder naming independent from the F5Audit LTM project.
@@ -103,6 +106,9 @@ Analyze the snapshot (offline):
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --file .\freed_ips.txt -o Highlighted_And_Simulated.xlsx
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
+  f5auditdns diagram --from-raw .\raw_dns -o .\topology
+  f5auditdns --diagram --raw .\raw_dns --ltm-raw-dir .\LTMAudits
+  f5auditdns diagram --mock -o .\mock_topology
 
 Default output: if -o is omitted for collect, a new directory named
   f5auditDNS_raw_<device-hostname>_<YYYYMMDD_HHMM>
@@ -142,6 +148,9 @@ and the final output prints an analyze command you can copy and paste.
   f5auditdns analyze --from-raw .\raw_dns --ltm-raw-dir .\LTMAudits --file .\freed_ips.txt -o Highlighted_And_Simulated.xlsx
   f5auditdns analyze --from-raw .\examples\raw_simulado -o DNS_Audit.xlsx
   f5auditdns analyze --from-raw .\raw_dns --format csv -o .\reports_csv
+  f5auditdns diagram --from-raw .\raw_dns -o .\topology
+  f5auditdns --diagram --raw .\raw_dns --ltm-raw-dir .\LTMAudits
+  f5auditdns diagram --mock -o .\mock_topology
 """
     examples += """
 
@@ -185,14 +194,23 @@ Ninguna opción cambia Verdict ni Approval Status (PENDING).
     )
     p.add_argument("--version", action="version", version=f"F5AuditDNS {__version__}")
     subs = p.add_subparsers(dest="command", required=True)
-    for name in ("validate", "collect", "analyze"):
+    for name in ("validate", "collect", "analyze", "diagram"):
         sub = subs.add_parser(name, help={
             "validate": "Check DNS API read permissions / Comprobar permisos API DNS",
             "collect": "Collect a read-only JSON snapshot / Recopilar RAW JSON sin modificar BIG-IP",
             "analyze": "Analyze saved snapshot, export Excel/CSV / Analizar RAW y exportar Excel/CSV",
+            "diagram": "Map GSLB topology as offline HTML/JSON / Mapa GSLB interactivo desde RAW",
         }[name], formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog={"validate": validate_examples, "collect": collect_examples,
-                    "analyze": analyze_examples}[name])
+                    "analyze": analyze_examples, "diagram": r"""Examples / Ejemplos:
+  f5auditdns diagram --from-raw .\DNS_RAW -o .\GSLB_Map
+  f5auditdns --diagram --raw .\DNS_RAW --ltm-raw-dir .\LTM_RAW
+  f5auditdns diagram --mock -o .\GSLB_Demo
+  f5auditdns diagram --from-raw .\DNS_RAW -o .\GSLB_Map --format json
+
+Generates gtm_topology.json and f5_dns_topology.html by default.
+Genera JSON y HTML interactivo sin realizar cambios. Los estados son snapshots, no son tiempo real.
+"""}[name])
         if name in ("validate", "collect"):
             sub.add_argument("-ho", "--host", required=True,
                              help="BIG-IP management IP or FQDN / IP de administración o nombre DNS")
@@ -234,6 +252,25 @@ Ninguna opción cambia Verdict ni Approval Status (PENDING).
                              help="Max DNS/LTM age gap (48h) / Diferencia máxima RAW DNS/LTM (48h)")
             sub.add_argument("-o", "--out", default="F5_DNS_Audit.xlsx", help="Output XLSX or CSV directory / Excel o directorio CSV de salida")
             sub.add_argument("--format", choices=("excel", "csv"), default="excel")
+        if name == "diagram":
+            sub.add_argument("--from-raw", "--raw", default=None, metavar="DIR",
+                             help="Existing F5AuditDNS RAW directory / Directorio RAW DNS existente")
+            sub.add_argument("--device-label", default=None, metavar="NAME",
+                             help="Override displayed device label, preserving raw source / Nombre visible del appliance")
+            sub.add_argument("--mock", action="store_true",
+                             help="Generate synthetic multi-partition example; no BIG-IP / Datos ficticios")
+            sub.add_argument("--ltm-raw-dir", action="append", default=[], metavar="DIR",
+                             help="Optional LTM evidence snapshots (repeatable) / RAW LTM opcional")
+            sub.add_argument("-o", "--out", default="GSLB_Topology",
+                             help="Output folder or HTML/JSON file path / Carpeta o ruta HTML/JSON")
+            sub.add_argument("--format", choices=("both", "html", "json"), default="both",
+                             help="Export both HTML and JSON by default / HTML, JSON o ambos")
+            sub.add_argument("--d3-js", metavar="PATH",
+                             help="Embed local D3.js v7 minified bundle for fully offline D3 / Insertar D3 v7 local")
+            sub.add_argument("--no-raw-inspector", action="store_true",
+                             help="Omit per-object JSON from HTML (safer to share) / Ocultar JSON de objetos")
+            sub.add_argument("--open", action="store_true", dest="open_browser",
+                             help="Open the generated HTML in local browser / Abrir navegador local")
         sub.add_argument("-v", "--verbose", action="store_true", help="Show collection progress / Mostrar progreso de la recolección")
     return p
 
@@ -255,6 +292,11 @@ def make_client(args: argparse.Namespace) -> F5ReadOnlyClient:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # Backwards-friendly convenience alias requested by operators:
+    # f5auditdns --diagram --raw DIR  ==  f5auditdns diagram --from-raw DIR
+    if argv and argv[0] == "--diagram":
+        argv[0] = "diagram"
     p = parser()
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
@@ -303,7 +345,51 @@ def main(argv: list[str] | None = None) -> int:
             print("The audit is read-only; no configuration was modified.")
             print("\nNext step: analyze this snapshot (run in the SAME directory):")
             print(f'  f5auditdns analyze --from-raw "{shell_path(path)}" -o ".{os.sep}DNS_Audit.xlsx"')
+            print("\nOr create an interactive GSLB topology (offline / sin volver a conectar):")
+            print(f'  f5auditdns diagram --from-raw "{shell_path(path)}" -o ".{os.sep}GSLB_Topology"')
             return 0 if bad == 0 else 2
+        if args.command == "diagram":
+            if args.mock and args.from_raw:
+                raise ValueError("--mock and --from-raw/--raw cannot be combined")
+            if not args.mock and not args.from_raw:
+                raise ValueError("diagram requires --from-raw DIR (or --mock)")
+            snapshot = mock_snapshot() if args.mock else Snapshot.read(args.from_raw)
+            ltm_scan = discover_ltm_snapshots(args.ltm_raw_dir) if args.ltm_raw_dir else None
+            if ltm_scan and not ltm_scan.inventories:
+                raise LtmSnapshotError("No valid LTM RAWs found under --ltm-raw-dir")
+            audit = analyze(snapshot, ltm_scan=ltm_scan)
+            graph = build_diagram(snapshot, audit)
+            if args.device_label:
+                graph["metadata"]["device"] = args.device_label
+                graph["tree"]["label"] = args.device_label
+            output = Path(args.out)
+            if output.suffix.lower() in (".html", ".json"):
+                folder = output.parent
+                json_path = output if output.suffix.lower() == ".json" else folder / "gtm_topology.json"
+                html_path = output if output.suffix.lower() == ".html" else folder / "f5_dns_topology.html"
+            else:
+                folder = output
+                json_path = folder / "gtm_topology.json"
+                html_path = folder / "f5_dns_topology.html"
+            if args.no_raw_inspector:
+                for node in graph["nodes"]:
+                    node["raw"] = {"_note": "Object JSON omitted with --no-raw-inspector"}
+            if args.format in ("json", "both"):
+                write_diagram_json(graph, json_path)
+                print(f"Topology JSON: {json_path}")
+            if args.format in ("html", "both"):
+                render_diagram_html(graph, html_path, d3_js=args.d3_js)
+                print(f"Interactive topology HTML: {html_path}")
+            info = graph["summary"]
+            print(f"Objects: {info['nodes']} | relationships: {info['edges']} | "
+                  f"partitions: {info['partitions']} | review items: {info['reviewObjects']}")
+            print("READ ONLY: no BIG-IP operation executed. All delete references are NOT RUN.")
+            if args.open_browser:
+                if args.format == "json":
+                    raise ValueError("--open requires HTML output; remove --format json")
+                import webbrowser
+                webbrowser.open(html_path.resolve().as_uri())
+            return 0
         snapshot = Snapshot.read(args.from_raw)
         if args.max_snapshot_gap_hours <= 0:
             raise ValueError("--max-snapshot-gap-hours must be positive")

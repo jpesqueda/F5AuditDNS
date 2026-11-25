@@ -1,12 +1,22 @@
 # F5AuditDNS — Guía de uso (Español)
 
-**Versión de desarrollo:** `0.5.2` | **Python:** 3.9 o superior | **Plataformas:** Windows, Linux y macOS.
+**Versión de desarrollo:** `0.5.3` | **Python:** 3.9 o superior | **Plataformas:** Windows, Linux y macOS.
 
 [Repositorio](https://github.com/jpesqueda/F5AuditDNS) · [English user guide](USER_GUIDE_EN.md)
 
 F5AuditDNS es un auditor de F5 BIG-IP DNS/GSLB **de solo lectura**. Utiliza iControl REST para capturar un snapshot JSON de la configuración, analiza sus referencias sin conexión, cruza los destinos de GSLB con los RAW originales de F5Audit LTM y genera un Excel o CSV para revisión de cleanup. No altera el estado de los F5.
 
 **Regla de seguridad:** ningún comando `tmsh` se ejecuta; todos los comandos de cambio en el reporte llevan `NOT RUN:`. Un `Verdict`, una IP en FreedIP o una celda amarilla **nunca** constituyen autorización para borrar. Todas las aprobaciones inician en `PENDING`.
+
+## Nuevo: modo `diagram` para mapear la topología (v0.5.3)
+
+Desde un RAW existente, sin nueva conexión al F5:
+
+```powershell
+f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology"
+```
+
+Genera `gtm_topology.json` y un HTML interactivo con mapas por partición, estados, dependencias, reglas y monitores. Consulta [docs/DIAGRAM_GUIDE_ES.md](docs/DIAGRAM_GUIDE_ES.md). El modo sigue siendo READ ONLY.
 
 ## 1. Arquitectura y conceptos
 
