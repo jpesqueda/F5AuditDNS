@@ -1,6 +1,6 @@
 # F5AuditDNS — Read-only BIG-IP DNS / GSLB Cleanup Auditor
 
-**Version:** `0.5.3` (development package; not yet published to PyPI)  
+**Version:** `0.5.4` (development package; awaiting CI/release)  
 **Requirements:** Python 3.9+, Windows / Linux / macOS  
 **Project:** https://github.com/jpesqueda/F5AuditDNS
 
@@ -194,7 +194,7 @@ py -m build
 py -m twine check dist/*
 ```
 
-GitHub Actions workflows for CI, TestPyPI and PyPI remain in `.github/workflows`. A PyPI release must be tagged only after all relevant tests pass and a reviewer verifies real-world TMOS compatibility. Version `0.5.3` has not been published by this project package.
+GitHub Actions workflows for CI, TestPyPI and PyPI remain in `.github/workflows`. A PyPI release must be tagged only after all relevant tests pass and a reviewer verifies real-world TMOS compatibility. Version `0.5.3` was published; v0.5.4 requires its own CI and release before PyPI.
 
 ## Limitations
 
@@ -215,3 +215,7 @@ License: MIT. `NOTICE.md` retains attribution for the inherited REST client.
 ## v0.5.3 — GSLB topology browser
 
 Use `f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology"` to generate the interactive HTML and the JSON graph without contacting the F5 again. Use `--mock` for a device-free demonstration. Read [DIAGRAM_GUIDE_EN.md](DIAGRAM_GUIDE_EN.md) for multi-partition reference handling, orphan evidence safeguards, health limitations, and local D3.js v7 embedding.
+
+### v0.5.4 Focused topology UI
+
+The diagram opens in **Focused View** (one Wide IP at a time), with 25-item paging in Service Explorer, cross-object search, a bounded/paginated Overview and inspector **Show Dependencies** to follow shared GSLB resources. No extra CLI flags and no new RAW collection are required. All canonical JSON relationships are preserved.

@@ -1,5 +1,21 @@
 # F5AuditDNS — GSLB Diagram Mode (v0.5.3)
 
+## v0.5.4 — Focused, paginated topology viewer
+
+After opening the generated `f5_dns_topology.html`, **Focused** is selected automatically. Its left **Service Explorer** displays one Wide IP at a time and offers a page of **25 services**. Search by FQDN, destination IP, GSLB Server, Virtual Server or Data Center, filter by partition or state and click the matching entry. The graph shows the selected dependency chain without removing any objects from `gtm_topology.json`.
+
+- **Focused**: one service at a time, readable minimum zoom, paginated oversized child groups.
+- **Overview**: all partitions and audit/unlinked categories, collapsed by default. Expand only visible paginated groups (25 children per group); switch to another overview page via arrow buttons.
+- **Inspector / Show Dependencies**: see up to 20 Wide IPs that use the inspected object; select a Wide IP to focus its chain.
+- **Search**: the explorer matches descendant properties as well as Wide IP names. Search selects the first matching service; selecting a different result changes the focus.
+- **All data preserved**: the graph JSON and full Excel audit are unaffected. These are views of an offline snapshot, not live device health.
+
+Generate the HTML from an existing RAW; no new `collect` is needed:
+
+```powershell
+f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology" --open
+```
+
 **READ ONLY / OFFLINE.** This mode extends the existing F5AuditDNS collector and analyzer. No new privileged collector, live REST session, backend service, or web server is required.
 
 ## Quick start

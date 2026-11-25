@@ -1,4 +1,4 @@
-# F5AuditDNS — Project Context (v0.5.3)
+# F5AuditDNS — Project Context (v0.5.4)
 
 - Maintained from the original GitHub v0.4.0 source distribution; no rewrite of the REST client, collector or conservative LTM matcher.
 - Read-only: collection GET, token authentication POST only, offline analysis, non-executable tmsh references.
@@ -9,7 +9,7 @@
 - Accurate rollback requires externally saved original configuration; sanitized REST data cannot guarantee exact restoration.
 - No production data, credentials or trusted publisher tokens in distributed fixtures.
 - Collect against one BIG-IP DNS per run; no DNS-peer or Sync Group comparison.
-- New development version 0.5.3; not yet pushed to main, tagged or published on PyPI.
+- Current development version 0.5.4; v0.5.3 is published on PyPI. v0.5.4 release requires passing CI.
 
 See `README.md` and `docs/REFERENCE_ENGINE.md` for CLI and safety guidance.
 
@@ -18,3 +18,5 @@ See `README.md` and `docs/REFERENCE_ENGINE.md` for CLI and safety guidance.
 - Search Results is optional and adds no cleanup approval or status changes.
 
 - `diagram.py`, `diagram_html.py`, and `diagram_mock.py` provide the offline topology visualization without new collector REST calls. Snapshot health and dynamic reference evidence remain conservative.
+
+- v0.5.4 focused topology uses only offline HTML/JS; pages 25 services and 25 child objects, preserves all canonical graph JSON and collected RAW snapshots.

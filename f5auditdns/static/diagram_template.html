@@ -19,6 +19,41 @@ button,input,select{font:inherit}button,select,input{background:#132238;color:va
 .link{fill:none;stroke:#536b82;stroke-width:1.7;opacity:.8}.link.down{stroke:#ed5c72;stroke-width:2.7;opacity:1}.link.degraded{stroke:#e9ba59;stroke-width:2.6;opacity:1}.node{cursor:pointer}.node .halo{stroke-width:1.8;fill:#101e31}.node text{fill:#e8f1fb;font:12px system-ui,Arial;paint-order:stroke;stroke:#07111e;stroke-width:2px;stroke-linejoin:round}.node .sub{fill:#9bb7cd;font-size:10px}.node.selected .halo{stroke:#82d8fd;stroke-width:3;filter:drop-shadow(0 0 5px #57c3ef)}.node .toggle{fill:#1a3044;stroke:#6f9dbc;stroke-width:1}.node .toggle-label{font:bold 13px system-ui;fill:#e2f4ff;stroke:none;text-anchor:middle;pointer-events:none}.flag{font-size:10px;color:#e4b66b}
 @media(max-width:1000px){.main{grid-template-columns:minmax(0,1fr) 315px}.header-right .pill:last-child{display:none}.toolbar input{min-width:150px}.hint{display:none}}
 @media(max-width:700px){.shell{height:auto;min-height:100dvh;grid-template-rows:auto auto minmax(490px,63vh) minmax(300px,1fr) auto}.main{display:contents}.inspector{border-left:0;border-top:1px solid var(--line);max-height:55vh}.brand h1{font-size:15px}.toolbar{gap:6px}.stat{min-width:70px;padding:6px}.stat b{font-size:14px}}
+/* v0.5.4: scale-friendly service explorer and paged topology. */
+.mode-toggle{display:flex;gap:3px;border:1px solid #38536c;background:#0b1828;border-radius:9px;padding:3px}
+.mode-toggle button{border:0;padding:7px 11px;background:transparent;white-space:nowrap}
+.mode-toggle button.active{background:#244c6b;border:1px solid #4b9bd0}
+.overview-pager{display:none;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+.overview-pager button{padding:6px 9px}
+.main.focus-mode{grid-template-columns:270px minmax(0,1fr) 350px}
+.navigator{display:none;flex-direction:column;min-width:0;overflow:hidden;background:#0d1a2b;border-right:1px solid #31465c}
+.main.focus-mode .navigator{display:flex}
+.nav-head{padding:17px 14px 12px;border-bottom:1px solid #233e58}
+.nav-head h2{margin:0 0 6px;font-size:15px}
+.nav-head p,.nav-hint{font-size:11px;color:#9fb6cb;line-height:1.5;margin:5px 0 0}
+.nav-count{padding:9px 14px;border-bottom:1px solid #263e54;font-size:11px;color:#a8c2d9}
+.service-list{overflow:auto;flex:1;min-height:0;padding:8px;display:flex;flex-direction:column;gap:5px}
+.service-entry{width:100%;text-align:left;padding:11px 9px;border:1px solid #2b4660;border-radius:9px;background:#14263a;color:#eaf2fc}
+.service-entry.active{background:#214963;border-color:#58c2ef}
+.service-entry strong{display:block;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.service-entry small{display:block;margin-top:4px;color:#9db5cf;overflow-wrap:anywhere}
+.service-entry .health-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.nav-footer{padding:11px 9px;border-top:1px solid #29425b;display:flex;align-items:center;justify-content:space-between;gap:5px}
+.nav-footer button{padding:6px 9px;font-size:11px}
+.nav-footer button:disabled,.overview-pager button:disabled{cursor:not-allowed;opacity:.35}
+.nav-footer span{font-size:11px;color:#a9c6db}
+.nav-actions{padding:10px 12px;border-top:1px solid #29425b}
+.nav-actions button{width:100%;font-size:12px}
+.canvas .focus-label{position:absolute;top:15px;left:16px;max-width:calc(100% - 30px);padding:7px 10px;background:#142a40df;border:1px solid #2b5974;color:#c9eaf6;border-radius:8px;font-size:11px;overflow-wrap:anywhere;pointer-events:none}
+.main.focus-mode .floating{top:auto;bottom:64px;left:12px}
+.main.focus-mode .stat{min-width:72px;padding:6px 9px}
+.main.focus-mode .stat b{font-size:15px}
+.page-note{font-size:10px;fill:#5bc4f4;cursor:pointer;font-weight:600}
+.dependency-section{margin-top:18px;padding:11px;border:1px solid #30506d;border-radius:10px;background:#102438}
+.dependency-section h3{font-size:12px;margin:0 0 7px}
+.dependency-section .dependency-action{display:block;width:100%;font-size:11px;text-align:left;margin:5px 0;padding:7px 8px;overflow-wrap:anywhere}
+@media(max-width:1080px){.main.focus-mode{grid-template-columns:230px minmax(0,1fr) 300px}.stat{min-width:75px}.nav-head{padding:10px}}
+@media(max-width:700px){.main.focus-mode{display:flex;flex-direction:column}.main.focus-mode .navigator{height:270px;flex:0 0 270px}.main.focus-mode .canvas{height:460px;flex:0 0 460px}.main.focus-mode .inspector{height:360px;flex:0 0 360px}.canvas .focus-label{top:82px}.mode-toggle button{padding:6px}}
 </style>
 </head>
 <body>
@@ -30,14 +65,23 @@ button,input,select{font:inherit}button,select,input{background:#132238;color:va
 <div class="toolbar">
  <label>Partition <select id="partition"><option value="all">All partitions</option></select></label>
  <input id="search" placeholder="Find FQDN, IP, server, DC, monitor…" aria-label="Search topology" autocomplete="off">
+  <div class="mode-toggle" aria-label="Topology view"><button id="focused-view" class="active" aria-pressed="true">Focused</button><button id="overview-view" aria-pressed="false">Overview</button></div>
  <div class="toolspacer"></div>
  <button class="filter-btn active" data-filter="all">All</button><button class="filter-btn" data-filter="available">Online</button><button class="filter-btn" data-filter="issues">Degraded / Offline</button><button class="filter-btn" data-filter="orphans">Audit / Unlinked</button>
- <button id="expand-all" title="Expand all visible branches">Expand</button><button id="collapse-all" title="Collapse service details">Collapse</button>
+ <div id="overview-pager" class="overview-pager"><button id="overview-prev" title="Previous overview page">◀</button><span id="overview-page"></span><button id="overview-next" title="Next overview page">▶</button></div>
+  <button id="expand-all" title="Expand visible branches, not the entire inventory">Expand</button><button id="collapse-all" title="Collapse service details">Collapse</button>
 </div>
-<div class="main">
+<div class="main focus-mode" id="main-layout">
+<aside class="navigator" aria-label="Wide IP service explorer">
+  <div class="nav-head"><h2>Service Explorer</h2><p>Choose one Wide IP. Only its dependencies are drawn; inventory remains complete.</p></div>
+  <div id="service-count" class="nav-count">Loading services…</div>
+  <div id="service-list" class="service-list" role="list"></div>
+  <div class="nav-footer"><button id="service-prev">◀ Previous</button><span id="service-page">1 / 1</span><button id="service-next">Next ▶</button></div>
+  <div class="nav-actions"><button id="focus-clear">Clear selection</button><p class="nav-hint">Use Overview for unlinked objects. Click References on any node to trace shared services.</p></div>
+</aside>
 <div class="canvas">
  <svg id="topology" role="img" aria-label="Interactive GSLB topology diagram"><g id="viewport"></g></svg>
- <div class="floating" id="stats"></div>
+ <div class="floating" id="stats"></div><div id="focus-label" class="focus-label" aria-live="polite"></div>
  <div class="mapcontrols"><button id="zoom-in" title="Zoom in">＋</button><button id="zoom-out" title="Zoom out">−</button><button id="fit" title="Fit topology">Fit</button><button id="reset" title="Reset view">Reset</button><button id="export" title="Export portable topology JSON">JSON ↓</button><button id="warning-button" class="warning-button">Warnings</button></div>
  <div id="warnings" class="warnings" role="status"></div>
  <div class="hint" id="renderer-label">Pan · Zoom · Click to inspect · ⊕ to expand</div>
@@ -69,6 +113,9 @@ const DATA=JSON.parse(document.getElementById('topology-data').textContent);
 const byId=new Map(DATA.nodes.map(n=>[n.id,n]));
 const mainSVG=document.getElementById('topology');const view=document.getElementById('viewport');
 const NS='http://www.w3.org/2000/svg';let selected=null,activeFilter='all',activeTab='details',collapsed=new Set(),transform={x:150,y:80,k:0.83};
+// Focus is the default. All data remains in DATA; rendering is intentionally bounded.
+let viewMode='focused',selectedServiceId=null,servicePage=0,overviewPage=0;
+const SERVICE_PAGE_SIZE=25, TREE_PAGE_SIZE=25, childPages=new Map();
 let lastLayout={nodes:[],links:[],width:1200,height:600};let d3zoom=null;
 const d3ready=typeof window.d3==='object'&&typeof window.d3.tree==='function';
 document.getElementById('renderer-label').textContent=d3ready?'D3 v7 · Pan · Zoom · Click to inspect':'Offline SVG engine · Pan · Zoom · Click to inspect';
@@ -83,21 +130,107 @@ for(const [value,label] of [['wideIPs','Wide IPs'],['pools','GSLB Pools'],['pool
  const el=document.createElement('div');el.className='stat';const num=document.createElement('b');num.textContent=DATA.summary[value]??'0';const name=document.createElement('span');name.textContent=label;el.append(num,name);document.getElementById('stats').appendChild(el);}
 const warnings=document.getElementById('warnings');const warningList=DATA.warnings||[];document.getElementById('warning-button').textContent='Warnings ('+warningList.length+')';
 for(const w of warningList){const p=document.createElement('p');p.textContent='⚠ '+w;warnings.appendChild(p);}
+const searchInput=document.getElementById('search');
+const serviceIndex=[],servicesByObject=new Map();
+function subtreeText(node,parts){
+  parts.push(node.label||'',node.fullPath||'',node.recordType||'');
+  const original=byId.get(node.id);
+  if(original)parts.push(original.ip||'',original.ltmLocation||'',original.statusReason||'',original.raw?.destination||'',original.name||'',original.fullPath||'');
+  for(const child of node.children||[])subtreeText(child,parts);
+}
+function indexDependencies(node,serviceId,seen){
+  if(!seen.has(node.id)){
+    seen.add(node.id);
+    if(!servicesByObject.has(node.id))servicesByObject.set(node.id,new Set());
+    servicesByObject.get(node.id).add(serviceId);
+  }
+  for(const child of node.children||[])indexDependencies(child,serviceId,seen);
+}
+for(const p of DATA.tree.children||[]){
+  for(const branch of p.children||[]){
+    if(branch.kind!=='BRANCH'||!String(branch.id).includes('branch|live|'))continue;
+    for(const node of branch.children||[]){
+      if(node.kind!=='WIDE_IP')continue;
+      const parts=[];subtreeText(node,parts);
+      const entry={id:node.id,label:node.label||'',partition:p.partition,recordType:node.recordType||'',health:node.health||'NOT OBSERVED',node,searchText:parts.join(' ').toLowerCase()};
+      serviceIndex.push(entry);indexDependencies(node,node.id,new Set());
+    }
+  }
+}
+serviceIndex.sort((a,b)=>(a.partition+'|'+a.label+'|'+a.recordType).localeCompare(b.partition+'|'+b.label+'|'+b.recordType));
+const serviceById=new Map(serviceIndex.map(x=>[x.id,x]));
+selectedServiceId=serviceIndex[0]?.id||null;
+function filteredServices(){
+  const query=searchInput.value.trim().toLowerCase(),partition=partSelect.value;
+  return serviceIndex.filter(s=>(partition==='all'||s.partition===partition)&&(!query||s.searchText.includes(query))&&
+    (activeFilter==='all'||activeFilter==='available'&&s.health==='AVAILABLE'||activeFilter==='issues'&&['DEGRADED','OFFLINE','UNAVAILABLE'].includes(s.health)||activeFilter==='orphans'&&!!byId.get(s.id)?.reviewRequired));
+}
+function renderNavigator(){
+  const records=filteredServices(),pages=Math.max(1,Math.ceil(records.length/SERVICE_PAGE_SIZE));
+  servicePage=Math.min(servicePage,pages-1);
+  document.getElementById('service-count').textContent=`${records.length} matching Wide IPs · ${serviceIndex.length} total`;
+  document.getElementById('service-page').textContent=`${servicePage+1} / ${pages}`;
+  document.getElementById('service-prev').disabled=servicePage===0;
+  document.getElementById('service-next').disabled=servicePage+1>=pages;
+  const list=document.getElementById('service-list');list.replaceChildren();
+  if(!records.length){const empty=document.createElement('p');empty.className='nav-hint';empty.textContent='No matching Wide IPs. Try another search or partition.';list.appendChild(empty);}
+  for(const service of records.slice(servicePage*SERVICE_PAGE_SIZE,(servicePage+1)*SERVICE_PAGE_SIZE)){
+    const button=document.createElement('button');button.className='service-entry'+(service.id===selectedServiceId?' active':'');
+    button.setAttribute('aria-label','Focus '+service.label);button.setAttribute('aria-pressed',String(service.id===selectedServiceId));
+    const name=document.createElement('strong');const dot=document.createElement('span');dot.className='health-dot';dot.style.background=palette[service.health]||'#9aafbf';name.append(dot,document.createTextNode(service.label));
+    const info=document.createElement('small');info.textContent=`${service.recordType} · ${service.partition} · ${service.health}`;button.append(name,info);
+    button.addEventListener('click',()=>{selectedServiceId=service.id;selected=service.id;collapsed.clear();childPages.clear();refresh(true);renderInspector();});list.appendChild(button);
+  }
+}
 function el(name,attrs={},text){const x=document.createElementNS(NS,name);Object.entries(attrs).forEach(([k,v])=>x.setAttribute(k,String(v)));if(text!==undefined)x.textContent=String(text);return x;}
 function chainKey(node,ancestor=''){return ancestor+'|'+node.kind+'|'+node.id+'|'+(node.relation||'');}
 function toFiltered(node,parentKey='',depth=0){
- const key=chainKey(node,parentKey);const original=byId.get(node.id);const query=document.getElementById('search').value.trim().toLowerCase();
- const kind=node.kind||'';const base=(node.label||'')+' '+(node.fullPath||'')+' '+(original?.ip||'')+' '+(original?.ltmLocation||'')+' '+(original?.statusReason||'')+' '+(original?.raw?.destination||'');
+ const key=chainKey(node,parentKey),original=byId.get(node.id);
+ // Service search targets the service list, never removes dependencies from a selected chain.
+ const query=viewMode==='overview'?searchInput.value.trim().toLowerCase():'';
+ const kind=node.kind||'',base=(node.label||'')+' '+(node.fullPath||'')+' '+(original?.ip||'')+' '+(original?.ltmLocation||'')+' '+(original?.statusReason||'')+' '+(original?.raw?.destination||'');
  const ownMatch=!query||base.toLowerCase().includes(query);
- const filterMatch=activeFilter==='all'||(activeFilter==='orphans'?(key.includes('branch|audit|')||original?.reviewRequired):activeFilter==='available'?node.health==='AVAILABLE':(['DEGRADED','OFFLINE','UNAVAILABLE'].includes(node.health)));
- const children=(node.children||[]).map(c=>toFiltered(c,key,depth+1)).filter(Boolean);
- const structural=['DEVICE','PARTITION','BRANCH'].includes(kind);
- const include=(ownMatch&&filterMatch)||children.length>0||(query===''&&activeFilter==='all');
+ const filterMatch=viewMode==='focused'||activeFilter==='all'||(activeFilter==='orphans'?(key.includes('branch|audit|')||original?.reviewRequired):activeFilter==='available'?node.health==='AVAILABLE':['DEGRADED','OFFLINE','UNAVAILABLE'].includes(node.health));
+ const allChildren=(node.children||[]).map(c=>toFiltered(c,key,depth+1)).filter(Boolean);
+ const include=(ownMatch&&filterMatch)||allChildren.length>0||(query===''&&activeFilter==='all')||viewMode==='focused';
  if(!include)return null;
- const isCollapsed=collapsed.has(key)||(depth>=4&&!collapsed.has('expanded|'+key)&&!query&&activeFilter==='all');
- return {...node,_key:key,_filteredChildren:children,_children:isCollapsed?[]:children,_hiddenCount:isCollapsed?children.length:0};
+ const paged=allChildren.length>TREE_PAGE_SIZE;
+ const page=viewMode==='overview'&&kind==='BRANCH'?overviewPage:(childPages.get(key)||0);
+ const safePage=paged?Math.min(page,Math.ceil(allChildren.length/TREE_PAGE_SIZE)-1):0;
+ const children=paged?allChildren.slice(safePage*TREE_PAGE_SIZE,(safePage+1)*TREE_PAGE_SIZE):allChildren;
+ const collapseDepth=viewMode==='focused'?5:2;
+ const isCollapsed=collapsed.has(key)||(depth>=collapseDepth&&!collapsed.has('expanded|'+key)&&!query);
+ return {...node,_key:key,_filteredChildren:allChildren,_children:isCollapsed?[]:children,
+   _hiddenCount:isCollapsed?allChildren.length:0,_page:safePage,_pages:Math.ceil(allChildren.length/TREE_PAGE_SIZE),_shownCount:children.length};
 }
-function forest(){const select=partSelect.value;const root={...DATA.tree,children:(DATA.tree.children||[]).filter(x=>select==='all'||x.partition===select)};return toFiltered(root);}
+function forest(){
+ if(viewMode==='focused'){
+  const service=serviceById.get(selectedServiceId);
+  if(!service)return null;
+  return toFiltered({...DATA.tree,children:[service.node]});
+ }
+ const select=partSelect.value;
+ const root={...DATA.tree,children:(DATA.tree.children||[]).filter(x=>select==='all'||x.partition===select)};
+ return toFiltered(root);
+}
+function setView(mode){
+ if(mode!=='focused'&&mode!=='overview')return;
+ if(mode==='focused'&&activeFilter==='orphans'){
+   activeFilter='all';document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x.dataset.filter==='all'));
+ }
+ viewMode=mode;
+ document.getElementById('main-layout').classList.toggle('focus-mode',mode==='focused');
+ for(const [id,isOn] of [['focused-view',mode==='focused'],['overview-view',mode==='overview']]){
+   const button=document.getElementById(id);button.classList.toggle('active',isOn);button.setAttribute('aria-pressed',String(isOn));
+ }
+ document.getElementById('overview-pager').style.display=mode==='overview'?'flex':'none';
+ document.getElementById('focus-label').style.display=mode==='focused'?'block':'none';
+ collapsed.clear();childPages.clear();refresh(true);
+}
+function refresh(refit){
+ renderNavigator();draw();if(refit){fit();updateTransform();}
+}
+function paginate(key,nextPage){childPages.set(key,nextPage);refresh(false);}
 function layoutNative(root){
  const nodes=[],links=[];let nextY=0;let maxDepth=0;
  function walk(n,depth,parent){const kids=n._children||[];maxDepth=Math.max(maxDepth,depth);const wrapped={data:n,depth,parent,children:[]};
@@ -112,7 +245,16 @@ function layoutD3(root){const r=d3.hierarchy(root,n=>n._children||[]);const t=d3
  return {nodes,links,width:Math.max(850,...nodes.map(n=>n.y+250)),height:Math.max(540,...nodes.map(n=>n.x+90))};}
 function setTransform(){view.setAttribute('transform',`translate(${transform.x},${transform.y}) scale(${transform.k})`);}
 function linkType(d){const s=d.source.data?.health,t=d.target.data?.health;if(s==='OFFLINE'||t==='OFFLINE'||s==='UNAVAILABLE'||t==='UNAVAILABLE')return 'down';if(s==='DEGRADED'||t==='DEGRADED')return 'degraded';return '';}
-function draw(){view.replaceChildren();const tree=forest();if(!tree){const t=el('text',{x:90,y:140,fill:'#a7b5c8','font-size':16},'No matching objects');view.appendChild(t);return;}
+function draw(){view.replaceChildren();const tree=forest();
+ const crumb=document.getElementById('focus-label');const service=serviceById.get(selectedServiceId);
+ crumb.textContent=service?`Focused: ${service.partition} / ${service.label} (${service.recordType})`:'Select a Wide IP from Service Explorer';
+ if(!tree){lastLayout={nodes:[],links:[],width:840,height:500};view.appendChild(el('text',{x:50,y:120,fill:'#a7b5c8','font-size':16},viewMode==='focused'?'Choose a Wide IP using the Service Explorer.':'No matching objects'));return;}
+ const overviewCount=Math.max(0,...(DATA.tree.children||[]).flatMap(p=>(p.children||[]).filter(b=>b.kind==='BRANCH').map(b=>(b.children||[]).length)));
+ const overviewPages=Math.max(1,Math.ceil(overviewCount/TREE_PAGE_SIZE));
+ document.getElementById('overview-page').textContent=`Page ${overviewPage+1} / ${overviewPages} · max 25/branch`;
+ document.getElementById('overview-prev').disabled=overviewPage===0;
+ document.getElementById('overview-next').disabled=overviewPage+1>=overviewPages;
+
  lastLayout=d3ready?layoutD3(tree):layoutNative(tree);
  for(const link of lastLayout.links){const a=link.source,b=link.target;const mid=(a.y+b.y)/2;
   view.appendChild(el('path',{d:`M${a.y},${a.x} C${mid},${a.x} ${mid},${b.x} ${b.y},${b.x}`,class:'link '+linkType(link)}));}
@@ -127,11 +269,18 @@ function draw(){view.replaceChildren();const tree=forest();if(!tree){const t=el(
   if((data._filteredChildren?.length||0)>0){const tx=0,ty=0;const toggle=el('g',{transform:`translate(${tx},${ty})`});const circle=el('circle',{r:10,cx:0,cy:0,class:'toggle'});circle.setAttribute('opacity','0.01');toggle.appendChild(circle);
    const badge=el('circle',{r:7.2,cx:-15,cy:0,class:'toggle'});toggle.appendChild(badge);
    toggle.appendChild(el('text',{x:-15,y:4,class:'toggle-label'},data._hiddenCount?'+':'−'));toggle.style.cursor='pointer';
-   toggle.addEventListener('click',e=>{e.stopPropagation();if(data._hiddenCount){collapsed.delete(data._key);collapsed.add('expanded|'+data._key)}else{collapsed.add(data._key);collapsed.delete('expanded|'+data._key)}draw();});g.appendChild(toggle);}
+   toggle.addEventListener('click',e=>{e.stopPropagation();if(data._hiddenCount){collapsed.delete(data._key);collapsed.add('expanded|'+data._key)}else{collapsed.add(data._key);collapsed.delete('expanded|'+data._key)}refresh(false);});g.appendChild(toggle);}
+  if(data._pages>1&&!data._hiddenCount){
+    const note=el('text',{x:17,y:27,class:'page-note'},`View ${data._page+1}/${data._pages} · click for next ${TREE_PAGE_SIZE}`);
+    note.addEventListener('click',e=>{e.stopPropagation();if(viewMode==='overview'&&data.kind==='BRANCH'){overviewPage=(overviewPage+1)%data._pages;}else childPages.set(data._key,(data._page+1)%data._pages);refresh(false);});g.appendChild(note);
+  }
   g.addEventListener('click',()=>{selected=data.id;renderInspector();draw();});
+  g.addEventListener('dblclick',()=>{if(viewMode==='overview'&&data.kind==='WIDE_IP'&&serviceById.has(data.id)){selectedServiceId=data.id;selected=data.id;setView('focused');renderInspector();}});
   view.appendChild(g);}
  setTransform();}
-function fit(){const box=document.querySelector('.canvas').getBoundingClientRect();const k=Math.max(.16,Math.min(1.05,Math.min((box.width-170)/(lastLayout.width+50),(box.height-100)/(lastLayout.height+80))));transform={x:55,y:60,k};setTransform();}
+function fit(){const box=document.querySelector('.canvas').getBoundingClientRect();const minimum=viewMode==='focused'?.72:.16;
+ const k=Math.max(minimum,Math.min(1.05,Math.min((box.width-170)/(lastLayout.width+50),(box.height-100)/(lastLayout.height+80))));
+ transform={x:55,y:60,k};setTransform();}
 function zoomBy(f){transform.k=Math.max(.12,Math.min(3.8,transform.k*f));setTransform();}
 function startD3Pan(){const zoom=d3.zoom().scaleExtent([.12,3.8]).on('zoom',e=>{const t=e.transform;transform={x:t.x,y:t.y,k:t.k};setTransform()});d3zoom=zoom;d3.select(mainSVG).call(zoom).on('dblclick.zoom',null);
  // Reuse our own zoom controls while preserving D3's gesture behavior.
@@ -151,18 +300,58 @@ function renderInspector(){const root=document.getElementById('inspect-content')
  root.appendChild(divField('Reference count',n.referenceCount));root.appendChild(divField('Reference review',n.orphanStatus));
  const refs=document.createElement('ul');refs.className='refs';for(const r of n.references||[]){const item=document.createElement('li');item.textContent=r.source+' ['+r.relation+' / '+r.certainty+']';refs.appendChild(item);}if(!refs.children.length)refs.appendChild(Object.assign(document.createElement('li'),{textContent:'No incoming verified links recorded; this does NOT establish decommission.'}));root.appendChild(refs);return;}
  for(const [key,val] of [['fullPath',n.fullPath],['Partition',n.partition],['Object type',n.kind.replaceAll('_',' ')],['Record type',n.recordType],['Observed health',n.health],['Effective health (derived if applicable)',n.effectiveHealth],['Health source',n.healthSource],['Status reason',n.statusReason],['Administrative config',n.config],['GSLB method',n.method],['Monitor',n.monitor],['iQuery evidence',n.iquery],['Virtual Server Discovery',n.virtualServerDiscovery],['LTM Location',n.ltmLocation],['LTM Health',n.ltmHealth],['LTM Comparison',n.ltmComparison],['Reference classification',n.orphanStatus],['Number of incoming references',n.referenceCount]])root.appendChild(divField(key,val));
+ const serviceIds=[...(servicesByObject.get(n.id)||[])];
+ if(serviceIds.length){
+  const section=document.createElement('section');section.className='dependency-section';
+  const heading=document.createElement('h3');heading.textContent=`Show Dependencies · ${serviceIds.length} Wide IP(s) reference this object`;section.appendChild(heading);
+  for(const id of serviceIds.slice(0,20)){
+    const target=serviceById.get(id);if(!target)continue;
+    const button=document.createElement('button');button.className='dependency-action';button.textContent=`${target.label} · ${target.partition} · ${target.recordType}`;
+    button.addEventListener('click',()=>{selectedServiceId=id;selected=n.id;setView('focused');renderInspector();});section.appendChild(button);
+  }
+  if(serviceIds.length>20){const foot=document.createElement('p');foot.className='muted';foot.textContent=`Showing 20 of ${serviceIds.length}. Search to find others.`;section.appendChild(foot);}
+  root.appendChild(section);
+ }
  const h=document.createElement('h3');h.textContent='SAFE CHANGE REFERENCE — NEVER EXECUTED';root.appendChild(h);appendCode(root,n.deleteReference||'No command reference');
  const warn=document.createElement('p');warn.className='warn';warn.textContent='PENDING REVIEW. An orphan finding alone does not authorize deletion. Preserve full tmsh list all-properties and validate DR, iRules, Topology and iQuery before any change.';root.appendChild(warn);}
 for(const tab of document.querySelectorAll('[data-tab]'))tab.addEventListener('click',()=>{activeTab=tab.dataset.tab;document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderInspector()});
-for(const f of document.querySelectorAll('[data-filter]'))f.addEventListener('click',()=>{activeFilter=f.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===f));draw();fit();updateTransform()});
-for(const id of ['partition','search'])document.getElementById(id).addEventListener(id==='search'?'input':'change',()=>{draw();fit();updateTransform()});
-document.getElementById('expand-all').addEventListener('click',()=>{collapsed.clear();function walk(n,path=''){const key=chainKey(n,path);collapsed.add('expanded|'+key);(n.children||[]).forEach(x=>walk(x,key));}walk(DATA.tree);draw();fit();updateTransform()});
-document.getElementById('collapse-all').addEventListener('click',()=>{collapsed.clear();draw();fit();updateTransform()});
+for(const tab of [['focused-view','focused'],['overview-view','overview']])document.getElementById(tab[0]).addEventListener('click',()=>setView(tab[1]));
+for(const f of document.querySelectorAll('[data-filter]'))f.addEventListener('click',()=>{
+ activeFilter=f.dataset.filter;
+ document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===f));
+ if(activeFilter==='orphans'&&viewMode==='focused')setView('overview');
+ else if(viewMode==='focused'){servicePage=0;selectedServiceId=filteredServices()[0]?.id||null;refresh(true);}else refresh(true);
+});
+partSelect.addEventListener('change',()=>{
+ servicePage=0;overviewPage=0;
+ if(viewMode==='focused'){selectedServiceId=filteredServices()[0]?.id||null;selected=selectedServiceId;renderInspector();}
+ refresh(true);
+});
+searchInput.addEventListener('input',()=>{
+ servicePage=0;overviewPage=0;
+ if(viewMode==='focused'){selectedServiceId=filteredServices()[0]?.id||null;selected=selectedServiceId;renderInspector();}
+ refresh(true);
+});
+document.getElementById('service-prev').addEventListener('click',()=>{servicePage=Math.max(0,servicePage-1);renderNavigator();});
+document.getElementById('service-next').addEventListener('click',()=>{servicePage++;renderNavigator();});
+document.getElementById('focus-clear').addEventListener('click',()=>{selectedServiceId=null;selected=null;renderInspector();refresh(true);});
+document.getElementById('overview-prev').addEventListener('click',()=>{overviewPage=Math.max(0,overviewPage-1);refresh(true);});
+document.getElementById('overview-next').addEventListener('click',()=>{overviewPage++;refresh(true);});
+document.getElementById('expand-all').addEventListener('click',()=>{
+ collapsed.clear();
+ // Expand only the current page and first few levels; never unroll thousands of objects.
+ function walk(n,parent='',depth=0){if(depth>=(viewMode==='focused'?6:4))return;const key=chainKey(n,parent);collapsed.add('expanded|'+key);
+  const current=(n.children||[]).slice(0,TREE_PAGE_SIZE);for(const child of current)walk(child,key,depth+1);
+ }
+ const root=viewMode==='focused'&&serviceById.get(selectedServiceId)?{...DATA.tree,children:[serviceById.get(selectedServiceId).node]}:DATA.tree;
+ walk(root);refresh(true);
+});
+document.getElementById('collapse-all').addEventListener('click',()=>{collapsed.clear();refresh(true);});
 document.getElementById('zoom-in').addEventListener('click',()=>{zoomBy(1.2);updateTransform()});document.getElementById('zoom-out').addEventListener('click',()=>{zoomBy(1/1.2);updateTransform()});
 document.getElementById('fit').addEventListener('click',()=>{fit();updateTransform()});document.getElementById('reset').addEventListener('click',()=>{transform={x:150,y:80,k:.83};updateTransform()});
 document.getElementById('warning-button').addEventListener('click',()=>warnings.classList.toggle('show'));
 document.getElementById('export').addEventListener('click',()=>{const payload=JSON.stringify(DATA,null,2);const blob=new Blob([payload],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.download='gtm_topology.json';a.href=url;a.click();URL.revokeObjectURL(url)});
-if(d3ready)startD3Pan();else startNativePan();draw();fit();updateTransform();renderInspector();
+if(d3ready)startD3Pan();else startNativePan();refresh(true);renderInspector();
 })();
 </script>
 </body>

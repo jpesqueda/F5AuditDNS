@@ -1,6 +1,16 @@
 # Changelog
 
-## [0.5.3] — 2026-11-24 (development; not published)
+## [0.5.4] — 2026-11-24 (development; awaiting CI and PyPI release)
+
+- Make **Focused View** the default for large GSLB maps: one Wide IP and its dependency chain at a readable zoom, with a 25-entry paginated Service Explorer.
+- Add FQDN/IP/VS/Server/DC search that automatically focuses matching services; retain partition and health filters.
+- Keep full **Overview** for all partitions and unlinked/audit categories, but collapse and page oversized branches; bound Expand to visible groups.
+- Add inspector **Show Dependencies** navigation for resources shared by multiple Wide IPs; no graph data or CSV/Excel content is removed.
+- Add 295-Wide-IP synthetic stress regression, Node.js syntax test, and local Chromium browser smoke tests.
+- No BIG-IP changes and no new collector endpoints. All tmsh references remain NOT RUN.
+
+
+## [0.5.3] — 2026-11-24 (published to PyPI)
 
 - Add offline `diagram --from-raw DIR` mode and `--diagram --raw DIR` alias without changing collector behavior.
 - Add global fullPath-indexed topology graph across partitions, preserving Direct and Last Resort Wide IP references, shared Pool Members, GSLB VS, Servers, Data Centers, and health-monitor dependencies.

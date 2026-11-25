@@ -1,6 +1,6 @@
 # F5AuditDNS — BIG-IP DNS/GSLB Audit & Cleanup Review
 
-**Development version 0.5.3** · Python 3.9+ · Windows / Linux / macOS · **READ ONLY**
+**Development version 0.5.4** · Python 3.9+ · Windows / Linux / macOS · **READ ONLY**
 
 **Language / Idioma:** [English](#english) | [Español](#español)
 
@@ -9,6 +9,17 @@
 ---
 
 ## English
+
+### New in v0.5.4 — Focused View for large GSLB inventories
+
+The **diagram HTML now opens in Focused View**, showing one Wide IP and its dependency chain instead of expanding every object. An offline **Service Explorer** lists 25 Wide IPs per page, with partition/status filters and instant FQDN, destination IP, GSLB Server or Data Center search; selecting a result focuses the map. Child groups with more than 25 entries are paginated, while `Overview` preserves the complete multi-partition inventory and offers bounded expansion. The inspector provides **Show Dependencies**, linking shared objects to all referencing Wide IPs. The full topology JSON is unchanged. The browser needs no server and never contacts BIG-IP.
+
+```powershell
+py -m pip install --upgrade f5auditdns==0.5.4
+f5auditdns diagram --from-raw ".\DNS_RAW" --ltm-raw-dir ".\LTM_RAW" -o ".\GSLB_Topology" --open
+```
+
+For a complete explanation, see [Diagram Guide EN](docs/DIAGRAM_GUIDE_EN.md) / [Guía Diagram ES](docs/DIAGRAM_GUIDE_ES.md).
 
 ### New: interactive GSLB topology diagram (v0.5.3)
 
@@ -95,6 +106,14 @@ All `tmsh` Delete/Modify/Create/Rollback commands in the report are **`NOT RUN` 
 ---
 
 ## Español
+
+### Nuevo en v0.5.4 — Vista enfocada para inventarios grandes
+
+El visor `diagram` abre en **Focused View**, mostrando la cadena de un solo Wide IP en lugar de expandir toda la infraestructura. El **Service Explorer** muestra 25 Wide IPs por página, permite filtrar por partición y estado, buscar por FQDN, IP de destino, Server o Data Center y enfocar el resultado. `Overview` conserva el inventario completo con expansión limitada y paginada. En el inspector, **Show Dependencies** identifica los Wide IPs que comparten un mismo objeto. El JSON completo y el modo **READ ONLY** no cambian. Consulta [la guía en español](docs/DIAGRAM_GUIDE_ES.md).
+
+```powershell
+f5auditdns diagram --from-raw ".\DNS_RAW" -o ".\GSLB_Topology" --open
+```
 
 ### Nuevo: diagrama interactivo de topología GSLB (v0.5.3)
 
